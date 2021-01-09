@@ -20,15 +20,23 @@ class Politician implements Unit {
     }
 
     Team enemy = rc.rc.getTeam().opponent();
+    RobotInfo strongest = null;
     int num_enemies = 0;
     for (RobotInfo i : rc.nearby) {
       if (i.team == enemy && i.location.isWithinDistanceSquared(rc.getLocation(), POLITICIAN.actionRadiusSquared)) {
         num_enemies++;
+      } else if (i.team == enemy) {
+        if (strongest == null || i.conviction > strongest.conviction)
+          strongest = i;
       }
     }
     // Don't empower if it wouldn't do anything
     if (rc.rc.getConviction() > 10 && num_enemies > 0) {
       rc.empower(POLITICIAN.actionRadiusSquared);
+    } else if (strongest != null) {
+      // Move towards the unit with the highest conviction to get it in empowering
+      // range
+      rc.target = strongest.location;
     }
 
     // Wander around constantly
