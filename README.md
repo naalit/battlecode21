@@ -1,6 +1,15 @@
-# Battlecode 2021 Scaffold
+# Battlecode Players
 
-This is the Battlecode 2021 scaffold, containing an `examplefuncsplayer`. Read https://2021.battlecode.org/getting-started!
+This is my copy of the scaffold repository. Here's most of what I've implemented so far:
+
+- Units have (random) target locations instead of wandering around inefficiently, and avoid units in the way but don't make use of passability yet
+- Messaging infrastructure, which works pretty well
+- Half-decent bidding algorithm: increment bid every time we lose, and don't bid above 10% of our influence
+- Units find and tell each other about map edges and enemy ECs
+- Slanderers run from muckrakers, and muckrakers run toward slanderers (neither does it very well, but it's something)
+- Politicians run towards the enemy EC if they know about it, and blow things up if possible
+
+While a lot of the specific code will be replaced, the infrastructure seems to work well and is probably worth keeping.
 
 ### Project Structure
 
@@ -32,4 +41,3 @@ This is the Battlecode 2021 scaffold, containing an `examplefuncsplayer`. Read h
     Runs a game with the settings in gradle.properties
 - `./gradlew update`
     Update to the newest version! Run every so often
-
