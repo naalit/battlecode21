@@ -11,10 +11,12 @@ public class Robot {
    * How far away we can sense in a straight line
    */
   int sensor_radius;
+  private int retarget_acc;
 
   public Robot(RobotController rc) {
     this.rc = rc;
     sensor_radius = (int) Math.sqrt((double) rc.getType().sensorRadiusSquared);
+    retarget_acc = rc.getID();
   }
 
   int getEnemyVotes() {
@@ -57,6 +59,11 @@ public class Robot {
   public Integer maxX = null;
   public Integer maxY = null;
 
+  /**
+   * Processes an edge location that was found or recieved from a teammate. If we
+   * already know about it, does nothing. If not, saves it and queues a message to
+   * tell others about it.
+   */
   void setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
     if (is_y) {
       // It's possible that unit is *at* the edge, so flag_loc.y = unit_loc.y;
@@ -90,6 +97,11 @@ public class Robot {
     queue.enqueue(new Flag(getLocation(), Flag.Type.Edge, is_y, flag_loc), MessageQueue.Priority.Low);
   }
 
+  /**
+   * Given a location we know is off the map, moves `(dx, dy)` by `(dx, dy)` until
+   * we get to a location that's on the map, then calls setEdge() on that
+   * location.
+   */
   void findEdge(MapLocation start, int dx, int dy, boolean is_y) throws GameActionException {
     while (!rc.onTheMap(start)) {
       start = start.translate(dx, dy);
@@ -97,12 +109,17 @@ public class Robot {
     setEdge(is_y, start, getLocation());
   }
 
-  void addEC(MapLocation ec) {
+  /**
+   * Processes an EC location that was found or recieved from a teammate. If we
+   * already know about it, does nothing. If not, adds it to the list and queues a
+   * message to tell others about it. Retuns whether it was new.
+   */
+  boolean addEC(MapLocation ec) {
     MapLocation[] new_arr = new MapLocation[enemy_ecs.length + 1];
     for (int i = 0; i < enemy_ecs.length; i++) {
       MapLocation l = enemy_ecs[i];
       if (l.equals(ec))
-        return;
+        return false;
       new_arr[i] = l;
     }
     new_arr[enemy_ecs.length] = ec;
@@ -111,6 +128,8 @@ public class Robot {
     System.out.println("Enemy EC at " + ec);
 
     queue.enqueue(new Flag(getLocation(), Flag.Type.EnemyEC, ec), MessageQueue.Priority.Medium);
+
+    return true;
   }
 
   /**
@@ -138,7 +157,9 @@ public class Robot {
             break;
           }
         } else if (i.type == RobotType.ENLIGHTENMENT_CENTER) {
-          addEC(i.location);
+          // If we find a new EC, run away from it so we don't die before we tell anyone
+          if (addEC(i.location))
+            runFrom(i.location);
         }
       }
 
@@ -217,20 +238,58 @@ public class Robot {
     }
   }
 
+  /**
+   * Makes sure we're going away from the given location.
+   */
+  void runFrom(MapLocation scary) {
+    MapLocation loc = getLocation();
+
+    for (int i = 0; i < 10; i++) {
+      if (loc.equals(target))
+        retarget();
+
+      // Make sure we're moving away from the muckraker
+      // This flips the target's components if they're pointing towards the muckraker
+      // (i.e. target is closer to muckraker than we are)
+      int x = target.x;
+      int y = target.y;
+      if (Math.abs(x - scary.x) < Math.abs(loc.x - scary.x)) {
+        x = loc.x - (x - loc.x);
+      }
+      if (Math.abs(y - scary.y) < Math.abs(loc.y - scary.y)) {
+        y = loc.y - (y - loc.y);
+      }
+      target = new MapLocation(x, y);
+
+      // Just try again if it's not on the map, up to 10 times
+      if (isOnMap(target)) {
+        return;
+      } else {
+        retarget();
+        continue;
+      }
+    }
+
+    // None of those worked, just move away
+    Direction dir = loc.directionTo(scary).opposite();
+    target = loc.add(dir).add(dir);
+  }
+
   void retarget() {
-    // ID is probably 10,000..20,000
-    // This should be fairly random
-    int id = getID() ^ getTurn() ^ (getTurn() * 5);
-    // Use the last 10 bits
-    int sig = id & 1023;
+    // This is a RNG technique I found online called Linear Congruential Generator
+    // This should be a random 10 bits
+    retarget_acc = (531 * retarget_acc + 871) & 1023;
     // Split into two, each in 0..31
-    int x = sig & 31;
-    int y = sig >> 5;
+    int x = retarget_acc & 31;
+    int y = retarget_acc >> 5;
     // Now switch to -16..15
     x = x - 16;
     y = y - 16;
     target = getLocation().translate(x, y);
     rc.setIndicatorDot(target, 0, 255, 0);
+
+    // Reset blocked_turns if we get a new target
+    blocked_turns = 0;
   }
 
   int blocked_turns = 0;
