@@ -66,6 +66,15 @@ public class Robot {
    */
   void setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
     if (is_y) {
+      // It's possible both units are on the edge; if so, we can see which direction is on the map
+      if (flag_loc.y == unit_loc.y && flag_loc.y == getLocation().y) {
+        MapLocation alt = getLocation().translate(0, 1);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = getLocation().translate(0, -1);
+      }
+
       // It's possible that unit is *at* the edge, so flag_loc.y = unit_loc.y;
       // but if so, this unit *isn't* at the edge, so we use that instead.
       if (flag_loc.y < unit_loc.y || flag_loc.y < getLocation().y) {
@@ -80,6 +89,14 @@ public class Robot {
         maxY = flag_loc.y;
       }
     } else {
+      if (flag_loc.x == unit_loc.x && flag_loc.x == getLocation().x) {
+        MapLocation alt = getLocation().translate(1, 0);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = getLocation().translate(-1, 0);
+      }
+
       if (flag_loc.x < unit_loc.x || flag_loc.x < getLocation().x) {
         if (minX != null)
           return;
@@ -106,7 +123,8 @@ public class Robot {
     while (!rc.onTheMap(start)) {
       start = start.translate(dx, dy);
     }
-    setEdge(is_y, start, getLocation());
+    // Go one more to make sure it's not on the edge
+    setEdge(is_y, start, start.translate(dx, dy));
   }
 
   /**
@@ -116,7 +134,7 @@ public class Robot {
    */
   boolean addEC(MapLocation ec) {
     MapLocation[] new_arr = new MapLocation[enemy_ecs.length + 1];
-    if (enemy_ecs.length > 4) {
+    if (enemy_ecs.length > 6) {
       System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
       return false;
     }
@@ -378,6 +396,11 @@ public class Robot {
 
       // Try going around obstacles, first left, then right
       MapLocation next = loc.add(dir);
+      // If the next location isn't on the map, don't move that way
+      if (!isOnMap(next)) {
+        retarget();
+        return false;
+      }
       if (rc.isLocationOccupied(next)) {
         dir = to_dir.rotateLeft();
       }
