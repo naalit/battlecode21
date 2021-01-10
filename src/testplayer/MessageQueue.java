@@ -27,6 +27,10 @@ public class MessageQueue {
   private ArrayDeque<Flag> med = new ArrayDeque<Flag>();
   private ArrayDeque<Flag> low = new ArrayDeque<Flag>();
 
+  public boolean isEmpty() {
+    return high.isEmpty() && med.isEmpty() && low.isEmpty();
+  }
+
   /**
    * Removes and returns the flag we should send next, returning `null` if there
    * aren't any pending.

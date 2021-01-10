@@ -116,6 +116,10 @@ public class Robot {
    */
   boolean addEC(MapLocation ec) {
     MapLocation[] new_arr = new MapLocation[enemy_ecs.length + 1];
+    if (enemy_ecs.length > 4) {
+      System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
+      return false;
+    }
     for (int i = 0; i < enemy_ecs.length; i++) {
       MapLocation l = enemy_ecs[i];
       if (l.equals(ec))
@@ -132,6 +136,8 @@ public class Robot {
     return true;
   }
 
+  int update_turn = 0;
+
   /**
    * Should generally be called every turn - updates `nearby`, reads unit flags,
    * checks for the edge of the map, etc. Call `finish` at the end of the turn,
@@ -139,6 +145,8 @@ public class Robot {
    */
   void update() {
     try {
+
+      update_turn = getTurn();
 
       nearby = rc.senseNearbyRobots();
       for (RobotInfo i : nearby) {
@@ -190,12 +198,34 @@ public class Robot {
   void finish() {
     try {
 
+      // If we've taken too long and are now in next turn, don't send messages, they're outdated
+      if (update_turn != getTurn()) {
+        System.out.println("AH! we took to long!");
+        return;
+      }
+
       // Don't send a message unless there's somebody around to hear it
       boolean should_send = false;
       for (RobotInfo i : nearby) {
         if (i.team == rc.getTeam() && i.location.isWithinDistanceSquared(getLocation(), i.type.sensorRadiusSquared)) {
           should_send = true;
         }
+      }
+
+      if (queue.isEmpty()) {
+        // If the queue is empty, send out all the information we know on repeat.
+        // There's no reason not to, as long as the priority is Low.
+        MapLocation loc = getLocation();
+        if (minX != null)
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(minX, loc.y)), MessageQueue.Priority.Low);
+        if (maxX != null)
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(maxX, loc.y)), MessageQueue.Priority.Low);
+        if (minY != null)
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, minY)), MessageQueue.Priority.Low);
+        if (maxY != null)
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, maxY)), MessageQueue.Priority.Low);
+        for (MapLocation i : enemy_ecs)
+          queue.enqueue(new Flag(loc, Flag.Type.EnemyEC, i), MessageQueue.Priority.Low);
       }
 
       if (should_send) {
@@ -206,6 +236,9 @@ public class Robot {
         // Our location might have changed since we enqueued it
         flag.unit_loc = getLocation();
         rc.setFlag(flag.encode());
+      } else {
+        // We need to reset the flag in case we move into range of someone with an outdated flag
+        rc.setFlag(0);
       }
 
     } catch (GameActionException e) {
@@ -230,7 +263,7 @@ public class Robot {
         return (!loc.isWithinDistanceSquared(getLocation(), rc.getType().sensorRadiusSquared) || rc.onTheMap(loc));
       } else {
         // We know the edges, no need to consult `rc`.
-        return false;
+        return true;
       }
     } catch (GameActionException e) {
       e.printStackTrace();
@@ -276,17 +309,19 @@ public class Robot {
   }
 
   void retarget() {
+    int width = (minX != null && maxX != null) ? maxX - minX : 64;
+    int height = (minY != null && maxY != null) ? maxY - minY : 64;
+    int wxh = width * height;
     // This is a RNG technique I found online called Linear Congruential Generator
-    // This should be a random 10 bits
-    retarget_acc = (531 * retarget_acc + 871) & 1023;
-    // Split into two, each in 0..31
-    int x = retarget_acc & 31;
-    int y = retarget_acc >> 5;
-    // Now switch to -16..15
-    x = x - 16;
-    y = y - 16;
-    target = getLocation().translate(x, y);
-    rc.setIndicatorDot(target, 0, 255, 0);
+    // This should be a random 12 bits
+    retarget_acc = (1231 * retarget_acc + 3171) % wxh;
+    // Split into two, each in 0..N
+    int x = retarget_acc % width;
+    int y = retarget_acc / width;
+    // Now switch to absolute coordinates
+    x = (minX != null) ? minX + x : getLocation().x + x - width / 2;
+    y = (minY != null) ? minY + y : getLocation().y + y - height / 2;
+    target = new MapLocation(x, y);
 
     // Reset blocked_turns if we get a new target
     blocked_turns = 0;
@@ -334,24 +369,17 @@ public class Robot {
         }
       }
 
+      rc.setIndicatorLine(getLocation(), target, 0, 255, 0);
+
       Direction to_dir = loc.directionTo(target);
       Direction dir = to_dir;
 
       // Try going around obstacles, first left, then right
       MapLocation next = loc.add(dir);
-      // If the next location isn't on the map, don't move that way
-      if (!rc.onTheMap(next)) {
-        retarget();
-        return false;
-      }
       if (rc.isLocationOccupied(next)) {
         dir = to_dir.rotateLeft();
       }
       next = loc.add(dir);
-      // If the next location isn't on the map, don't move that way
-      if (!rc.onTheMap(next)) {
-        return false;
-      }
       if (rc.isLocationOccupied(next)) {
         dir = to_dir.rotateRight();
       }
