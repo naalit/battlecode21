@@ -8,6 +8,8 @@ class ECenter implements Unit {
 
   // We just go through this list over and over again when spawning things
   static RobotType[] spawn_order = { SLANDERER, POLITICIAN, MUCKRAKER, SLANDERER, POLITICIAN };
+  static Direction[] directions = { Direction.NORTH, Direction.NORTHEAST, Direction.NORTHWEST, Direction.EAST,
+      Direction.WEST, Direction.SOUTHWEST, Direction.SOUTHEAST, Direction.SOUTH };
 
   int cursor = 0;
   int last_votes;
@@ -19,6 +21,43 @@ class ECenter implements Unit {
   public ECenter(Robot rc) {
     this.rc = rc;
     last_votes = rc.getTeamVotes();
+  }
+
+  RobotType spawnType() {
+    RobotType next = spawn_order[cursor];
+
+    // Don't spawn another muckraker if there are too many, i.e. we can see two
+    // right now
+    if (next == MUCKRAKER) {
+      int muck_count = 0;
+      for (RobotInfo i : rc.nearby) {
+        if (i.type == MUCKRAKER) {
+          muck_count++;
+          if (muck_count >= 2)
+            break;
+        }
+      }
+      // Spawn a politician instead
+      if (muck_count >= 2)
+        next = POLITICIAN;
+    }
+
+    return next;
+  }
+
+  Direction openDirection() {
+    try {
+
+      for (Direction dir : directions) {
+        if (!rc.rc.isLocationOccupied(rc.getLocation().add(dir)))
+          return dir;
+      }
+
+    } catch (GameActionException e) {
+      e.printStackTrace();
+    }
+
+    return Direction.NORTH;
   }
 
   public void turn() {
@@ -41,10 +80,9 @@ class ECenter implements Unit {
 
     // Spawn the next robot, always with 50 influence
     // TODO: different starting influences per type
-    // TODO: don't always spawn things to the north so we can spawn faster
     if (rc.getInfluence() > 50) {
-      RobotType next = spawn_order[cursor];
-      if (rc.build(next, Direction.NORTH, 50)) {
+      RobotType next = spawnType();
+      if (rc.build(next, openDirection(), 50)) {
         cursor++;
         if (cursor >= spawn_order.length) {
           cursor = 0;

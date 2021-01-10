@@ -198,7 +198,8 @@ public class Robot {
   void finish() {
     try {
 
-      // If we've taken too long and are now in next turn, don't send messages, they're outdated
+      // If we've taken too long and are now in next turn, don't send messages,
+      // they're outdated
       if (update_turn != getTurn()) {
         System.out.println("AH! we took to long!");
         return;
@@ -237,7 +238,8 @@ public class Robot {
         flag.unit_loc = getLocation();
         rc.setFlag(flag.encode());
       } else {
-        // We need to reset the flag in case we move into range of someone with an outdated flag
+        // We need to reset the flag in case we move into range of someone with an
+        // outdated flag
         rc.setFlag(0);
       }
 
@@ -380,6 +382,10 @@ public class Robot {
         dir = to_dir.rotateLeft();
       }
       next = loc.add(dir);
+      // If the next location isn't on the map, don't move that way
+      if (!isOnMap(next)) {
+        return false;
+      }
       if (rc.isLocationOccupied(next)) {
         dir = to_dir.rotateRight();
       }
