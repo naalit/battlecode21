@@ -5,9 +5,9 @@ import battlecode.common.*;
 /*
  * A flag looks like this:
  * 0000 00000 0 00 000000 000000
- * ~~~~       ~ ~~ ~~~~~~ ~~~~~~ y coordinate of location
- * |          | |     \ x coordinate of location
- * |          | sign of x and y coordinates (0 = negative, 1 = positive)
+ * ~~~~ ~~~~~ ~ ~~ ~~~~~~ ~~~~~~ y coordinate of location
+ * |    |     | |     \ x coordinate of location
+ * | timestamp| sign of x and y coordinates (0 = negative, 1 = positive)
  * |         aux_flag, an extra boolean
  * header, representing the flag type (4 bits = 16 types, may increase later)
  */
@@ -19,6 +19,14 @@ public class Flag {
    * are to the right of the aux flag
    */
   final int AUX_FLAG_SHIFT = 14;
+  final int TIMESTAMP_SHIFT = 15;
+  final int TIMESTAMP_BITS = 5;
+  /**
+   * The timestamp is the number of turns it's been since the information was last
+   * validated. It can be zero, if we found it this turn. If it's more than 30, we
+   * set it to 31.
+   */
+  final int MAX_TIMESTAMP = 30;
   /**
    * We XOR each flag with this constant key for a little bit of encryption. It's
    * not much, but at least we don't have raw locations in our flags. I just
@@ -42,10 +50,15 @@ public class Flag {
      */
     Edge,
     /**
-     * Header 2. A message saying we found an enemy Enlightenment Center, with its
-     * location.
+     * Header 2. A message saying we found an enemy or neutral Enlightenment Center,
+     * with its location.
      */
     EnemyEC,
+    /**
+     * Header 3. A message saying we found an EC that belongs to us, which may have
+     * previously belonged to someone else.
+     */
+    FriendlyEC,
   }
 
   /**
@@ -64,8 +77,12 @@ public class Flag {
    * If this is a Type.Edge, only one of the coordinates is valid.
    */
   MapLocation flag_loc;
+  /**
+   * This is the turn number the information was last validated.
+   */
+  int timestamp;
 
-  public int encode() {
+  public int encode(int turn) {
     int sig = 0;
     switch (type) {
     case None:
@@ -77,8 +94,16 @@ public class Flag {
     case EnemyEC:
       sig = 2;
       break;
+    case FriendlyEC:
+      sig = 3;
+      break;
     }
     int flag = sig << (FLAG_SIZE - TYPE_BITS);
+
+    int trel = turn - timestamp;
+    if (trel > MAX_TIMESTAMP)
+      trel = MAX_TIMESTAMP + 1;
+    flag |= trel << TIMESTAMP_SHIFT;
 
     flag |= (aux_flag ? 1 : 0) << AUX_FLAG_SHIFT;
 
@@ -109,25 +134,26 @@ public class Flag {
   }
 
   public Flag resend(MapLocation new_unit_loc) {
-    return new Flag(new_unit_loc, type, aux_flag, flag_loc);
+    return new Flag(new_unit_loc, type, aux_flag, flag_loc, timestamp);
   }
 
-  public Flag(MapLocation unit_loc, Type type) {
-    this(unit_loc, type, false, null);
+  public Flag(MapLocation unit_loc, Type type, int timestamp) {
+    this(unit_loc, type, false, null, timestamp);
   }
 
-  public Flag(MapLocation unit_loc, Type type, MapLocation flag_loc) {
-    this(unit_loc, type, false, flag_loc);
+  public Flag(MapLocation unit_loc, Type type, MapLocation flag_loc, int timestamp) {
+    this(unit_loc, type, false, flag_loc, timestamp);
   }
 
-  public Flag(MapLocation unit_loc, Type type, boolean aux_flag, MapLocation flag_loc) {
+  public Flag(MapLocation unit_loc, Type type, boolean aux_flag, MapLocation flag_loc, int timestamp) {
     this.unit_loc = unit_loc;
     this.type = type;
     this.aux_flag = aux_flag;
     this.flag_loc = flag_loc;
+    this.timestamp = timestamp;
   }
 
-  public Flag(MapLocation unit_loc, int flag) {
+  public Flag(MapLocation unit_loc, int turn, int flag) {
     // First, decrypt the flag
     flag ^= FLAG_XOR_KEY;
 
@@ -144,9 +170,19 @@ public class Flag {
     case 2:
       type = Type.EnemyEC;
       break;
+    case 3:
+      type = Type.FriendlyEC;
+      break;
     default:
       throw new RuntimeException("Unknown type " + sig);
     }
+
+    int trel = (flag >> TIMESTAMP_SHIFT) & MAX_TIMESTAMP + 1;
+    if (trel == MAX_TIMESTAMP + 1)
+      // Lower bound on the timestamp
+      timestamp = 0;
+    else
+      timestamp = turn - trel;
 
     aux_flag = (flag & (1 << AUX_FLAG_SHIFT)) != 0;
 

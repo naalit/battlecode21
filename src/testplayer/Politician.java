@@ -15,17 +15,26 @@ class Politician implements Unit {
     rc.update();
 
     // Target enemy ECs if possible
-    if (rc.enemy_ecs.length > 0) {
-      rc.target = rc.enemy_ecs[0];
+    MapLocation target_ec = null;
+    int ec_dist2 = 1000000;
+    for (TimeLoc l : rc.enemy_ecs) {
+      MapLocation ec = l.loc;
+      int dist2 = ec.distanceSquaredTo(rc.getLocation());
+      if (target_ec == null || dist2 < ec_dist2) {
+        target_ec = ec;
+        ec_dist2 = dist2;
+      }
     }
+    if (target_ec != null)
+      rc.target = target_ec;
 
-    Team enemy = rc.rc.getTeam().opponent();
+    Team team = rc.rc.getTeam();
     RobotInfo strongest = null;
     int num_enemies = 0;
     for (RobotInfo i : rc.nearby) {
-      if (i.team == enemy && i.location.isWithinDistanceSquared(rc.getLocation(), POLITICIAN.actionRadiusSquared)) {
+      if (i.team != team && i.location.isWithinDistanceSquared(rc.getLocation(), POLITICIAN.actionRadiusSquared)) {
         num_enemies++;
-      } else if (i.team == enemy) {
+      } else if (i.team != team) {
         if (strongest == null || i.conviction > strongest.conviction)
           strongest = i;
       }

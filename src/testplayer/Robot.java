@@ -1,6 +1,17 @@
 package testplayer;
 
+import java.util.ArrayList;
 import battlecode.common.*;
+
+class TimeLoc {
+  int time;
+  MapLocation loc;
+
+  TimeLoc(int time, MapLocation loc) {
+    this.time = time;
+    this.loc = loc;
+  }
+}
 
 /**
  * An extension of RobotController with more functionality
@@ -52,7 +63,8 @@ public class Robot {
   // -- COMMUNICATION, ETC. -- //
 
   MessageQueue queue = new MessageQueue();
-  public MapLocation[] enemy_ecs = {};
+  public ArrayList<TimeLoc> enemy_ecs = new ArrayList<TimeLoc>();
+  public ArrayList<TimeLoc> friendly_ecs = new ArrayList<TimeLoc>();
   public RobotInfo[] nearby;
   public Integer minX = null;
   public Integer minY = null;
@@ -66,7 +78,8 @@ public class Robot {
    */
   void setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
     if (is_y) {
-      // It's possible both units are on the edge; if so, we can see which direction is on the map
+      // It's possible both units are on the edge; if so, we can see which direction
+      // is on the map
       if (flag_loc.y == unit_loc.y && flag_loc.y == getLocation().y) {
         MapLocation alt = getLocation().translate(0, 1);
         if (isOnMap(alt))
@@ -111,7 +124,8 @@ public class Robot {
     // System.out.println("Found edge " + (is_y ? "y" : "x") + " at " + flag_loc);
 
     // Relay the message on so all units hear about the edge
-    queue.enqueue(new Flag(getLocation(), Flag.Type.Edge, is_y, flag_loc), MessageQueue.Priority.Low);
+    // The timestamp is ignored since edges don't change
+    queue.enqueue(new Flag(getLocation(), Flag.Type.Edge, is_y, flag_loc, 0), MessageQueue.Priority.Low);
   }
 
   /**
@@ -128,28 +142,77 @@ public class Robot {
   }
 
   /**
-   * Processes an EC location that was found or recieved from a teammate. If we
-   * already know about it, does nothing. If not, adds it to the list and queues a
-   * message to tell others about it. Retuns whether it was new.
+   * Processes an enemy EC location that was found or recieved from a teammate. If
+   * we already know about it, does nothing. If not, adds it to the list and
+   * queues a message to tell others about it. Retuns whether it was new.
    */
-  boolean addEC(MapLocation ec) {
-    MapLocation[] new_arr = new MapLocation[enemy_ecs.length + 1];
-    if (enemy_ecs.length > 6) {
+  boolean addEnemyEC(MapLocation ec, int time) throws GameActionException {
+    for (int i = 0; i < friendly_ecs.size(); i++) {
+      TimeLoc l = friendly_ecs.get(i);
+      if (l.loc.equals(ec)) {
+        if (l.time > time)
+          return false;
+        else {
+          friendly_ecs.remove(i);
+          break;
+        }
+      }
+    }
+    for (TimeLoc l : enemy_ecs) {
+      if (l.loc.equals(ec)) {
+        l.time = Math.max(l.time, time);
+        return false;
+      }
+    }
+
+    if (enemy_ecs.size() > 6) {
       System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
       return false;
     }
-    for (int i = 0; i < enemy_ecs.length; i++) {
-      MapLocation l = enemy_ecs[i];
-      if (l.equals(ec))
-        return false;
-      new_arr[i] = l;
+
+    enemy_ecs.add(new TimeLoc(time, ec));
+
+    // System.out.println("Enemy EC at " + ec);
+
+    queue.enqueue(new Flag(getLocation(), Flag.Type.EnemyEC, ec, time), MessageQueue.Priority.Medium);
+
+    return true;
+  }
+
+  /**
+   * Processes a friendly EC location that was found or recieved from a teammate. If
+   * we already know about it, does nothing. If not, adds it to the list and
+   * queues a message to tell others about it. Retuns whether it was new.
+   */
+  boolean addFriendlyEC(MapLocation ec, int time) throws GameActionException {
+    for (int i = 0; i < enemy_ecs.size(); i++) {
+      TimeLoc l = enemy_ecs.get(i);
+      if (l.loc.equals(ec)) {
+        if (l.time > time)
+          return false;
+        else {
+          enemy_ecs.remove(i);
+          break;
+        }
+      }
     }
-    new_arr[enemy_ecs.length] = ec;
-    enemy_ecs = new_arr;
+    for (TimeLoc l : friendly_ecs) {
+      if (l.loc.equals(ec)) {
+        l.time = Math.max(l.time, time);
+        return false;
+      }
+    }
 
-    System.out.println("Enemy EC at " + ec);
+    if (friendly_ecs.size() > 6) {
+      System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
+      return false;
+    }
 
-    queue.enqueue(new Flag(getLocation(), Flag.Type.EnemyEC, ec), MessageQueue.Priority.Medium);
+    friendly_ecs.add(new TimeLoc(time, ec));
+
+    // System.out.println("Friendly EC at " + ec);
+
+    queue.enqueue(new Flag(getLocation(), Flag.Type.FriendlyEC, ec, time), MessageQueue.Priority.Medium);
 
     return true;
   }
@@ -168,15 +231,25 @@ public class Robot {
 
       nearby = rc.senseNearbyRobots();
       for (RobotInfo i : nearby) {
+        if (Clock.getBytecodesLeft() < 1000)
+          break;
+
         if (i.team == rc.getTeam()) {
-          Flag flag = new Flag(i.location, rc.getFlag(i.ID));
+          if (i.type == RobotType.ENLIGHTENMENT_CENTER)
+            addFriendlyEC(i.location, getTurn());
+
+          Flag flag = new Flag(i.location, getTurn(), rc.getFlag(i.ID));
           switch (flag.type) {
           case Edge:
             setEdge(flag.aux_flag, flag.flag_loc, i.location);
             break;
 
           case EnemyEC:
-            addEC(flag.flag_loc);
+            addEnemyEC(flag.flag_loc, flag.timestamp);
+            break;
+
+          case FriendlyEC:
+            addFriendlyEC(flag.flag_loc, flag.timestamp);
             break;
 
           case None:
@@ -184,7 +257,7 @@ public class Robot {
           }
         } else if (i.type == RobotType.ENLIGHTENMENT_CENTER) {
           // If we find a new EC, run away from it so we don't die before we tell anyone
-          if (addEC(i.location))
+          if (addEnemyEC(i.location, getTurn()))
             runFrom(i.location);
         }
       }
@@ -216,9 +289,9 @@ public class Robot {
   void finish() {
     try {
 
-      // If we've taken too long and are now in next turn, don't send messages,
+      // If we've taken too long and might be in next turn, don't send messages,
       // they're outdated
-      if (update_turn != getTurn()) {
+      if (Clock.getBytecodesLeft() < 500 || update_turn != getTurn()) {
         System.out.println("AH! we took to long!");
         return;
       }
@@ -236,25 +309,27 @@ public class Robot {
         // There's no reason not to, as long as the priority is Low.
         MapLocation loc = getLocation();
         if (minX != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(minX, loc.y)), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(minX, loc.y), 0), MessageQueue.Priority.Low);
         if (maxX != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(maxX, loc.y)), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(maxX, loc.y), 0), MessageQueue.Priority.Low);
         if (minY != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, minY)), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, minY), 0), MessageQueue.Priority.Low);
         if (maxY != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, maxY)), MessageQueue.Priority.Low);
-        for (MapLocation i : enemy_ecs)
-          queue.enqueue(new Flag(loc, Flag.Type.EnemyEC, i), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, maxY), 0), MessageQueue.Priority.Low);
+        for (TimeLoc i : enemy_ecs)
+          queue.enqueue(new Flag(loc, Flag.Type.EnemyEC, i.loc, i.time), MessageQueue.Priority.Low);
+        for (TimeLoc i : friendly_ecs)
+          queue.enqueue(new Flag(loc, Flag.Type.FriendlyEC, i.loc, i.time), MessageQueue.Priority.Low);
       }
 
       if (should_send) {
         // Send the next message
         Flag flag = queue.next();
         if (flag == null)
-          flag = new Flag(getLocation(), Flag.Type.None);
+          flag = new Flag(getLocation(), Flag.Type.None, 0);
         // Our location might have changed since we enqueued it
         flag.unit_loc = getLocation();
-        rc.setFlag(flag.encode());
+        rc.setFlag(flag.encode(getTurn()));
       } else {
         // We need to reset the flag in case we move into range of someone with an
         // outdated flag
