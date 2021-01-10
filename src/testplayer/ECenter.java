@@ -45,6 +45,33 @@ class ECenter implements Unit {
     return next;
   }
 
+  int influenceFor(RobotType type) {
+    switch (type) {
+    case MUCKRAKER:
+      // There isn't much reason to spawn a muckraker with more than 1 influence,
+      // since it can still expose just as well
+      return 1;
+    case SLANDERER:
+      // Since there's a floor function involved in the slanderer income function, we
+      // only pick the lowest starting influence in each income bracket
+      // Here, we use the maximum of 130, but we might want to go up to 207 or beyond
+      int inf = rc.getInfluence();
+      if (inf > 150)
+        return 130;
+      if (inf > 120)
+        return 107;
+      if (inf > 100)
+        return 85;
+      return 63;
+    case POLITICIAN:
+      // TODO: how much influence should we give pols?
+      return 60;
+    default:
+      System.out.println("Not a spawnable type: " + type);
+      return 0;
+    }
+  }
+
   Direction openDirection() {
     try {
 
@@ -78,11 +105,10 @@ class ECenter implements Unit {
       bid_last_round = false;
     }
 
-    // Spawn the next robot, always with 50 influence
-    // TODO: different starting influences per type
+    // Spawn the next robot, with different starting influences per type
     if (rc.getInfluence() > 50) {
       RobotType next = spawnType();
-      if (rc.build(next, openDirection(), 50)) {
+      if (rc.build(next, openDirection(), influenceFor(next))) {
         cursor++;
         if (cursor >= spawn_order.length) {
           cursor = 0;
