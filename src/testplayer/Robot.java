@@ -406,6 +406,23 @@ public class Robot {
   void retarget() {
     int width = (minX != null && maxX != null) ? maxX - minX : 64;
     int height = (minY != null && maxY != null) ? maxY - minY : 64;
+    MapLocation min = new MapLocation(
+        minX != null ? minX : getLocation().x - width / 2,
+        minY != null ? minY : getLocation().y - width / 2);
+    
+    if (rc.getType() == RobotType.SLANDERER && !friendly_ecs.isEmpty()) {
+        // Stay close to the EC
+        int dist_from_ec = 16;
+        min = new MapLocation(Math.max(min.x, friendly_ecs.get(0).loc.x - dist_from_ec),
+        Math.max(min.y, friendly_ecs.get(0).loc.y - dist_from_ec));
+        width = dist_from_ec;
+        height = dist_from_ec;
+    }
+
+    retarget(min, width, height);
+  }
+
+  void retarget(MapLocation min, int width, int height) {
     int wxh = width * height;
     // This is a RNG technique I found online called Linear Congruential Generator
     // This should be a random 12 bits
@@ -414,9 +431,7 @@ public class Robot {
     int x = retarget_acc % width;
     int y = retarget_acc / width;
     // Now switch to absolute coordinates
-    x = (minX != null) ? minX + x : getLocation().x + x - width / 2;
-    y = (minY != null) ? minY + y : getLocation().y + y - height / 2;
-    target = new MapLocation(x, y);
+    target = min.translate(x, y);
 
     // Reset blocked_turns if we get a new target
     blocked_turns = 0;
