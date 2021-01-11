@@ -23,11 +23,13 @@ public class Robot {
    */
   int sensor_radius;
   private int retarget_acc;
+  int start_turn;
 
   public Robot(RobotController rc) {
     this.rc = rc;
     sensor_radius = (int) Math.sqrt((double) rc.getType().sensorRadiusSquared);
     retarget_acc = rc.getID();
+    start_turn = getTurn();
   }
 
   int getEnemyVotes() {
@@ -166,11 +168,12 @@ public class Robot {
     }
 
     if (enemy_ecs.size() > 6) {
-      System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
+      System.out.println("-----\n----\n----\nTOO MANY EECS, can't add " + ec + "\n----\n----");
       return false;
     }
 
     enemy_ecs.add(new TimeLoc(time, ec));
+    rc.setIndicatorDot(ec, 255, 0, 0);
 
     // System.out.println("Enemy EC at " + ec);
 
@@ -204,11 +207,12 @@ public class Robot {
     }
 
     if (friendly_ecs.size() > 6) {
-      System.out.println("-----\n----\n----\nTOO MANY ECS\n----\n----");
+      System.out.println("-----\n----\n----\nTOO MANY FECS, can't add " + ec + "\n----\n----");
       return false;
     }
 
     friendly_ecs.add(new TimeLoc(time, ec));
+    rc.setIndicatorDot(ec, 0, 0, 255);
 
     // System.out.println("Friendly EC at " + ec);
 
@@ -231,7 +235,7 @@ public class Robot {
 
       nearby = rc.senseNearbyRobots();
       for (RobotInfo i : nearby) {
-        if (Clock.getBytecodesLeft() < 1000)
+        if (Clock.getBytecodesLeft() < 1500 || update_turn != getTurn())
           break;
 
         if (i.team == rc.getTeam()) {
@@ -292,19 +296,10 @@ public class Robot {
       // If we've taken too long and might be in next turn, don't send messages,
       // they're outdated
       if (Clock.getBytecodesLeft() < 500 || update_turn != getTurn()) {
-        System.out.println("AH! we took to long!");
         return;
       }
 
-      // Don't send a message unless there's somebody around to hear it
-      boolean should_send = false;
-      for (RobotInfo i : nearby) {
-        if (i.team == rc.getTeam() && i.location.isWithinDistanceSquared(getLocation(), i.type.sensorRadiusSquared)) {
-          should_send = true;
-        }
-      }
-
-      if (queue.isEmpty()) {
+      if (Clock.getBytecodesLeft() > 2400 && queue.isEmpty()) {
         // If the queue is empty, send out all the information we know on repeat.
         // There's no reason not to, as long as the priority is Low.
         MapLocation loc = getLocation();
@@ -322,20 +317,13 @@ public class Robot {
           queue.enqueue(new Flag(loc, Flag.Type.FriendlyEC, i.loc, i.time), MessageQueue.Priority.Low);
       }
 
-      if (should_send) {
-        // Send the next message
-        Flag flag = queue.next();
-        if (flag == null)
-          flag = new Flag(getLocation(), Flag.Type.None, 0);
-        // Our location might have changed since we enqueued it
-        flag.unit_loc = getLocation();
-        rc.setFlag(flag.encode(getTurn()));
-      } else {
-        // We need to reset the flag in case we move into range of someone with an
-        // outdated flag
-        rc.setFlag(0);
-      }
-
+      // Send the next message
+      Flag flag = queue.next();
+      if (flag == null)
+        flag = new Flag(getLocation(), Flag.Type.None, 0);
+      // Our location might have changed since we enqueued it
+      flag.unit_loc = getLocation();
+      rc.setFlag(flag.encode(getTurn()));
     } catch (GameActionException e) {
       e.printStackTrace();
     }
@@ -439,6 +427,19 @@ public class Robot {
 
   int blocked_turns = 0;
 
+  boolean can_move(MapLocation loc) {
+    if (!isOnMap(loc))
+      return false;
+
+    for (TimeLoc i : friendly_ecs) {
+      if (i.loc.isWithinDistanceSquared(target, 2)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   boolean target_move(boolean retarget_if_there) {
     try {
       MapLocation loc = getLocation();
@@ -453,7 +454,7 @@ public class Robot {
 
       // Retarget if:
       // 1. it's not on the map
-      if (!isOnMap(target)) {
+      if (!can_move(target)) {
         retarget();
       } else if (loc.isWithinDistanceSquared(target, rc.getType().sensorRadiusSquared)) {
         // 2. it's blocked, and has been blocked for long enough that it probably won't
@@ -467,15 +468,6 @@ public class Robot {
           }
         } else {
           blocked_turns = 0;
-
-          // 3. it's North of a friendly Enlightenment Center (so would block spawns)
-          MapLocation south_p = target.translate(0, -1);
-          if (rc.canSenseLocation(south_p)) {
-            RobotInfo south = rc.senseRobotAtLocation(south_p);
-            if (south != null && south.team == rc.getTeam() && south.type == RobotType.ENLIGHTENMENT_CENTER) {
-              retarget();
-            }
-          }
         }
       }
 
@@ -486,23 +478,18 @@ public class Robot {
 
       // Try going around obstacles, first left, then right
       MapLocation next = loc.add(dir);
-      // If the next location isn't on the map, don't move that way
-      if (!isOnMap(next)) {
-        retarget();
-        return false;
-      }
-      if (rc.isLocationOccupied(next)) {
+      if (!can_move(next) || rc.isLocationOccupied(next)) {
         dir = to_dir.rotateLeft();
       }
       next = loc.add(dir);
-      // If the next location isn't on the map, don't move that way
-      if (!isOnMap(next)) {
-        return false;
-      }
-      if (rc.isLocationOccupied(next)) {
+      if (!can_move(next) || rc.isLocationOccupied(next)) {
         dir = to_dir.rotateRight();
       }
-
+      next = loc.add(dir);
+      if (!can_move(next)) {
+        return false;
+      }
+      
       return move(dir);
 
     } catch (GameActionException e) {
@@ -556,9 +543,14 @@ public class Robot {
   boolean move(Direction dir) {
     if (rc.canMove(dir)) {
       try {
+        // In case we don't get around to setting the flag later
+        // The one we had before is now invalid, since we moved
+        rc.setFlag(0);
         rc.move(dir);
       } catch (GameActionException e) {
-        System.out.println("Unreachable");
+        // It is actually possible for us to get here, if we ran out
+        // of bytecode and somebody else moved here before we came back
+        return false;
       }
       return true;
     } else {

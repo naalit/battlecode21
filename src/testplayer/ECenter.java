@@ -76,7 +76,8 @@ class ECenter implements Unit {
     try {
 
       for (Direction dir : directions) {
-        if (!rc.rc.isLocationOccupied(rc.getLocation().add(dir)))
+        MapLocation l = rc.getLocation().add(dir);
+        if (rc.isOnMap(l) && !rc.rc.isLocationOccupied(l))
           return dir;
       }
 
