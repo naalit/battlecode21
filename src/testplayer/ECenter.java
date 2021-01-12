@@ -45,6 +45,8 @@ class ECenter implements Unit {
     return next;
   }
 
+  int god_pol_counter = 0;
+
   int influenceFor(RobotType type) {
     switch (type) {
     case MUCKRAKER:
@@ -64,8 +66,11 @@ class ECenter implements Unit {
         return 85;
       return 63;
     case POLITICIAN:
-      // TODO: how much influence should we give pols?
-      return 60;
+      // Every 10 pols, spawn a "god pol" with 200hp
+      god_pol_counter++;
+      if (god_pol_counter > 10 && rc.getInfluence() > 500)
+        return 200;
+      return 50;
     default:
       System.out.println("Not a spawnable type: " + type);
       return 0;

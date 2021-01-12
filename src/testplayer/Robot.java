@@ -183,8 +183,8 @@ public class Robot {
   }
 
   /**
-   * Processes a friendly EC location that was found or recieved from a teammate. If
-   * we already know about it, does nothing. If not, adds it to the list and
+   * Processes a friendly EC location that was found or recieved from a teammate.
+   * If we already know about it, does nothing. If not, adds it to the list and
    * queues a message to tell others about it. Retuns whether it was new.
    */
   boolean addFriendlyEC(MapLocation ec, int time) throws GameActionException {
@@ -304,13 +304,17 @@ public class Robot {
         // There's no reason not to, as long as the priority is Low.
         MapLocation loc = getLocation();
         if (minX != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(minX, loc.y), 0), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(minX, loc.y), 0),
+              MessageQueue.Priority.Low);
         if (maxX != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(maxX, loc.y), 0), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, false, new MapLocation(maxX, loc.y), 0),
+              MessageQueue.Priority.Low);
         if (minY != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, minY), 0), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, minY), 0),
+              MessageQueue.Priority.Low);
         if (maxY != null)
-          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, maxY), 0), MessageQueue.Priority.Low);
+          queue.enqueue(new Flag(loc, Flag.Type.Edge, true, new MapLocation(loc.x, maxY), 0),
+              MessageQueue.Priority.Low);
         for (TimeLoc i : enemy_ecs)
           queue.enqueue(new Flag(loc, Flag.Type.EnemyEC, i.loc, i.time), MessageQueue.Priority.Low);
         for (TimeLoc i : friendly_ecs)
@@ -358,6 +362,10 @@ public class Robot {
    * Makes sure we're going away from the given location.
    */
   void runFrom(MapLocation scary) {
+    // We call this if there's an enemy EC in range
+    if (rc.getType() == RobotType.ENLIGHTENMENT_CENTER)
+      return;
+
     MapLocation loc = getLocation();
 
     for (int i = 0; i < 10; i++) {
@@ -394,17 +402,16 @@ public class Robot {
   void retarget() {
     int width = (minX != null && maxX != null) ? maxX - minX : 64;
     int height = (minY != null && maxY != null) ? maxY - minY : 64;
-    MapLocation min = new MapLocation(
-        minX != null ? minX : getLocation().x - width / 2,
+    MapLocation min = new MapLocation(minX != null ? minX : getLocation().x - width / 2,
         minY != null ? minY : getLocation().y - width / 2);
-    
+
     if (rc.getType() == RobotType.SLANDERER && !friendly_ecs.isEmpty()) {
-        // Stay close to the EC
-        int dist_from_ec = 16;
-        min = new MapLocation(Math.max(min.x, friendly_ecs.get(0).loc.x - dist_from_ec),
-        Math.max(min.y, friendly_ecs.get(0).loc.y - dist_from_ec));
-        width = dist_from_ec;
-        height = dist_from_ec;
+      // Stay close to the EC
+      int dist_from_ec = 16;
+      min = new MapLocation(Math.max(min.x, friendly_ecs.get(0).loc.x - dist_from_ec),
+          Math.max(min.y, friendly_ecs.get(0).loc.y - dist_from_ec));
+      width = dist_from_ec;
+      height = dist_from_ec;
     }
 
     retarget(min, width, height);
@@ -477,19 +484,25 @@ public class Robot {
       Direction dir = to_dir;
 
       // Try going around obstacles, first left, then right
-      MapLocation next = loc.add(dir);
-      if (!can_move(next) || rc.isLocationOccupied(next)) {
-        dir = to_dir.rotateLeft();
+      MapLocation[] options = { loc.add(dir), loc.add(dir.rotateLeft()), loc.add(dir.rotateRight()) };
+      MapLocation best = null;
+      double best_pass = -1;
+      for (MapLocation i : options) {
+        if (!can_move(i) || rc.isLocationOccupied(i))
+          continue;
+        if (i.equals(target)) {
+          best = i;
+          best_pass = 100;
+        }
+        if (rc.sensePassability(i) > best_pass) {
+          best = i;
+          best_pass = rc.sensePassability(i);
+        }
       }
-      next = loc.add(dir);
-      if (!can_move(next) || rc.isLocationOccupied(next)) {
-        dir = to_dir.rotateRight();
-      }
-      next = loc.add(dir);
-      if (!can_move(next)) {
+      if (best == null)
         return false;
-      }
-      
+      dir = loc.directionTo(best);
+
       return move(dir);
 
     } catch (GameActionException e) {

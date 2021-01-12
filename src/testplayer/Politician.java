@@ -35,9 +35,9 @@ class Politician implements Unit {
     Team team = rc.rc.getTeam();
     RobotInfo strongest = null;
     enemies.clear();
-    //      radii^2: 1, 2, 4, 9
-    int[] rcounts = {0, 0, 0, 0};
-    int[] damages = {0, 0, 0, 0};
+    // radii^2: 1, 2, 4, 9
+    int[] rcounts = { 0, 0, 0, 0 };
+    int[] damages = { 0, 0, 0, 0 };
     boolean lower_hp_friendly_pol_in_range = false;
     MapLocation loc = rc.getLocation();
     for (RobotInfo i : rc.nearby) {
@@ -46,18 +46,19 @@ class Politician implements Unit {
           enemies.add(i);
         else if (i.type == RobotType.POLITICIAN && i.conviction < rc.rc.getConviction())
           lower_hp_friendly_pol_in_range = true;
-        
+
         for (int r = 0; r < rcounts.length; r++) {
-          int r2 = (r <= 1) ? r+1 : r*r;
+          int r2 = (r <= 1) ? r + 1 : r * r;
           if (i.location.isWithinDistanceSquared(loc, r2))
             rcounts[r]++;
         }
-      } else if (i.team != team && (i.type == RobotType.MUCKRAKER || i.conviction > 10) && (strongest == null || i.conviction > strongest.conviction))
+      } else if (i.team != team && (i.type == RobotType.MUCKRAKER || i.conviction > 10)
+          && (strongest == null || i.conviction > strongest.conviction))
         strongest = i;
     }
     for (RobotInfo i : enemies) {
       for (int r = 0; r < rcounts.length; r++) {
-        int r2 = (r <= 1) ? r+1 : r*r;
+        int r2 = (r <= 1) ? r + 1 : r * r;
         if (rcounts[r] > 0) {
           int damage_per = (rc.rc.getConviction() - 10) / rcounts[r];
           if (i.location.isWithinDistanceSquared(loc, r2)) {
@@ -74,15 +75,15 @@ class Politician implements Unit {
     int max_r2 = 9;
     int max_damage = 0;
     for (int r = 0; r < rcounts.length; r++) {
-      int r2 = (r <= 1) ? r+1 : r*r;
+      int r2 = (r <= 1) ? r + 1 : r * r;
       int damage = damages[r];
       if (damage > max_damage) {
-          max_r2 = r2;
-          max_damage = damage;
+        max_r2 = r2;
+        max_damage = damage;
       }
     }
-    // Empower if we'd be using at least one fifth of our conviction
-    if (rc.rc.getConviction() <= 5 * max_damage) {
+    // Empower if we'd be using at least one third of our conviction
+    if (rc.rc.getConviction() <= 3 * max_damage) {
       rc.empower(max_r2);
     } else {
       if (strongest != null) {
@@ -95,7 +96,8 @@ class Politician implements Unit {
         // This way, it's the pol with the lowest conviction's job to kill small units
         rc.empower(max_r2);
       } else if (rc.getTurn() - rc.start_turn > 500) {
-        // If we've been wandering around for a while and haven't found anything, just give up and empower
+        // If we've been wandering around for a while and haven't found anything, just
+        // give up and empower
         // This is important so we kill ALL the enemy's units
         rc.empower(max_r2);
       }
