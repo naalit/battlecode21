@@ -95,7 +95,7 @@ class Politician implements Unit {
         // slanderers without our pols doing anything
         // This way, it's the pol with the lowest conviction's job to kill small units
         rc.empower(max_r2);
-      } else if (rc.getTurn() - rc.start_turn > 500) {
+      } else if (!enemies.isEmpty() && rc.getTurn() - rc.start_turn > 500) {
         // If we've been wandering around for a while and haven't found anything, just
         // give up and empower
         // This is important so we kill ALL the enemy's units

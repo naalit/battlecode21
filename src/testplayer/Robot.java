@@ -403,7 +403,7 @@ public class Robot {
     int width = (minX != null && maxX != null) ? maxX - minX : 64;
     int height = (minY != null && maxY != null) ? maxY - minY : 64;
     MapLocation min = new MapLocation(minX != null ? minX : getLocation().x - width / 2,
-        minY != null ? minY : getLocation().y - width / 2);
+        minY != null ? minY : getLocation().y - height / 2);
 
     if (rc.getType() == RobotType.SLANDERER && !friendly_ecs.isEmpty()) {
       // Stay close to the EC

@@ -2,12 +2,14 @@
 
 This is my copy of the scaffold repository. Here's most of what I've implemented so far:
 
-- Units have (random) target locations instead of wandering around inefficiently, and avoid units in the way but don't make use of passability yet
+- Units have (random) target locations instead of wandering around inefficiently, and avoid units and high passability tiles
 - Messaging infrastructure, which works pretty well
 - Half-decent bidding algorithm: increment bid every time we lose, and don't bid above 10% of our influence
 - Units find and tell each other about map edges and enemy ECs
 - Slanderers run from muckrakers, and muckrakers run toward slanderers (neither does it very well, but it's something)
-- Politicians run towards the enemy EC if they know about it, and blow things up if possible
+- Politicians run towards the enemy EC if they know about it, and blow things up when it's worth it
+
+That's in `src/testplayer`. There's also another bot, `src/redarmy`, which is a more defensive strategy that doesn't work very well yet.
 
 While a lot of the specific code will be replaced, the infrastructure seems to work well and is probably worth keeping.
 
