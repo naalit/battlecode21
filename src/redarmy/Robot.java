@@ -117,9 +117,10 @@ public class Robot {
     // radius, which damage would be divided between.
     final int[] radii = { 1, 2, 4, 9 }; // These are squared
     int[] rcounts = { 0, 0, 0, 0 };
-    // We also keep track of how many politicians are near here
+    // We also keep track of how many politicians are near here, and their average conviction
     // We'll see slanderers as politicians, so subtract those first
     int nfpols = -Comms.friendly_slanderers.size();
+    int fpol_conv = -Comms.total_fslan_conv;
     affected.clear();
     // We also want to know where enemy muckrakers are, so we can protect slanderers
     // We just look at the closest muckraker
@@ -130,10 +131,12 @@ public class Robot {
       if (i.team != team && i.type == MUCKRAKER
           && (muckraker == null || dist2 < muckraker.location.distanceSquaredTo(loc)))
         muckraker = i;
-      else if (i.team == team && i.type == POLITICIAN)
+      else if (i.team == team && i.type == POLITICIAN) {
         nfpols++;
+        fpol_conv += i.conviction;
+      }
 
-      if (dist2 < POLITICIAN.actionRadiusSquared) {
+      if (dist2 <= POLITICIAN.actionRadiusSquared) {
         // If it could recieve damage or healing from this politician, add it to
         // `affected` so we can process it later
         if (i.team != team || i.conviction < i.influence || i.type == ENLIGHTENMENT_CENTER)
@@ -141,7 +144,7 @@ public class Robot {
 
         for (int r = 0; r < rcounts.length; r++) {
           int r2 = radii[r];
-          if (dist2 < r2)
+          if (dist2 <= r2)
             rcounts[r]++;
         }
       }
@@ -163,9 +166,13 @@ public class Robot {
     // conviction (which is usually true), then we need to kill the muckraker so it
     // doesn't kill the slanderer.
     if (muckraker != null && slanderer != null
-    // The muckraker will be in kill distance after moving once
-        && muckraker.location.add(muckraker.location.directionTo(slanderer.location))
-            .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+        // Either the muckraker is in kill distance now, or will be in after moving once and can move
+        && (muckraker.location.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+           || (
+                muckraker.location.add(muckraker.location.directionTo(slanderer.location))
+                    .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                && !rc.isLocationOccupied(muckraker.location.add(muckraker.location.directionTo(slanderer.location)))
+            ))
         // We're in kill distance of the muckraker now (radii[3] is the maximum radius
         // for empowering)
         && muckraker.location.isWithinDistanceSquared(loc, radii[3])
@@ -212,12 +219,12 @@ public class Robot {
       int dist2 = i.location.distanceSquaredTo(loc);
 
       // Make sure pols don't crowd enemy ECs and not do anything
-      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 == radii[0])
+      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 <= radii[0])
         totals[0] += useful_conv / 2;
 
       for (int r = 0; r < rcounts.length; r++) {
         int r2 = radii[r];
-        if (dist2 < r2) {
+        if (dist2 <= r2) {
           hits_enemy[r] |= i.team != team;
           totals[r] += Math.min(useful_conv / rcounts[r],
               // We can contribute as much as we want to friendly ECs, and extra damage done
@@ -247,9 +254,10 @@ public class Robot {
     }
 
     // Empower if we'd be using at least half of our conviction, not counting tax;
-    // or if there are a ton of politicians around, so this one's life isn't worth
-    // much
-    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 20)) && rc.canEmpower(max_r2)) {
+    // or if there are a ton of politicians around and this one is at or below average,
+    // so its life isn't worth much
+    int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
+    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 20 && rc.getConviction() <= avg_conv)) && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return;
     }

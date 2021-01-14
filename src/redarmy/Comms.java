@@ -9,6 +9,11 @@ public class Comms {
   static MessageQueue queue = new MessageQueue();
   public static ArrayList<MapLocation> enemy_ecs = new ArrayList<MapLocation>();
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<RobotInfo>();
+  /**
+   * Keeps track of the total amount of conviction by friendly slanderers in range,
+   * used to calculate average politician conviction.
+   */
+  public static int total_fslan_conv = 0;
   static RobotController rc;
   static Team team;
   static RobotInfo[] nearby = {};
@@ -41,6 +46,7 @@ public class Comms {
     MapLocation loc = rc.getLocation();
     int radius = rc.getType().sensorRadiusSquared;
     friendly_slanderers.clear();
+    total_fslan_conv = 0;
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -69,8 +75,10 @@ public class Comms {
 
         // RobotInfo isn't mutable, but politicians would ideally like to know which
         // units are slanderers, so we should store this somewhere at some point
-        if (flag.is_slanderer)
+        if (flag.is_slanderer) {
           friendly_slanderers.add(i);
+          total_fslan_conv += i.conviction;
+        }
 
         // Process the flag
         switch (flag.type) {
