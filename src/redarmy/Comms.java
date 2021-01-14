@@ -8,6 +8,7 @@ import static battlecode.common.RobotType.*;
 public class Comms {
   static MessageQueue queue = new MessageQueue();
   public static ArrayList<MapLocation> enemy_ecs = new ArrayList<MapLocation>();
+  public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<RobotInfo>();
   static RobotController rc;
   static Team team;
   static RobotInfo[] nearby = {};
@@ -39,6 +40,7 @@ public class Comms {
     nearby = rc.senseNearbyRobots();
     MapLocation loc = rc.getLocation();
     int radius = rc.getType().sensorRadiusSquared;
+    friendly_slanderers.clear();
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -60,15 +62,15 @@ public class Comms {
 
         // If we're out of time, give up so we don't try to read flags of a unit that's
         // now out of range
-        if (rc.getRoundNum() != start_round || Clock.getBytecodesLeft() < 100)
+        if (rc.getRoundNum() != start_round || Clock.getBytecodesLeft() < 1000)
           break;
 
         Flag flag = Flag.decode(iloc, rc.getFlag(i.ID));
 
         // RobotInfo isn't mutable, but politicians would ideally like to know which
         // units are slanderers, so we should store this somewhere at some point
-        // if (flag.is_slanderer)
-        // i.type = SLANDERER;
+        if (flag.is_slanderer)
+          friendly_slanderers.add(i);
 
         // Process the flag
         switch (flag.type) {

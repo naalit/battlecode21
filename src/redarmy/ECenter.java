@@ -19,6 +19,43 @@ public class ECenter {
     return Direction.NORTH;
   }
 
+  final static int[] pol_infs = { 25, 25, 50, 25, 25, 50, 25, 25, 200 };
+  static int pol_inf_cursor = 0;
+
+  static int influenceFor(RobotType type) {
+    switch (type) {
+    case MUCKRAKER:
+      // There isn't much reason to spawn a muckraker with more than 1 influence,
+      // since it can still expose just as well
+      return 1;
+    case SLANDERER: {
+      // Since there's a floor function involved in the slanderer income function, we
+      // only pick the lowest starting influence in each income bracket
+      // Here, we use the maximum of 130, but we might want to go up to 207 or beyond
+      int inf = rc.getInfluence();
+      if (inf > 150)
+        return 130;
+      if (inf > 120)
+        return 107;
+      if (inf > 100)
+        return 85;
+      return 63;
+    }
+    case POLITICIAN: {
+      int inf = pol_infs[pol_inf_cursor % pol_infs.length];
+      if (rc.getInfluence() >= 2 * inf) {
+        pol_inf_cursor++;
+        return inf;
+      } else {
+        return 25;
+      }
+    }
+    default:
+      System.out.println("Not a spawnable type: " + type);
+      return 0;
+    }
+  }
+
   static void turn() throws GameActionException {
     Comms.update();
 
@@ -35,7 +72,7 @@ public class ECenter {
 
     RobotType type = npols < nslans ? POLITICIAN : SLANDERER;
     Direction dir = openDirection();
-    int inf = npols < nslans ? 50 : 107;
+    int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {
       rc.buildRobot(type, dir, inf);
     }

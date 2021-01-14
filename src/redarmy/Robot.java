@@ -10,10 +10,13 @@ public class Robot {
   static Team team;
   static MapLocation ec;
   static boolean moved_yet = false;
-  static boolean exploring = false;
   static MapLocation target = null;
 
   static boolean targetMove() {
+    return targetMove(false);
+  }
+
+  static boolean targetMove(boolean exploring) {
     try {
 
       MapLocation loc = rc.getLocation();
@@ -47,12 +50,27 @@ public class Robot {
           best_pass = rc.sensePassability(i);
         }
       }
-      if (best == null) {
-        // If we can't move, and it's not because of cooldown, it must be blocked
-        if (exploring && rc.isReady())
+      // It's better to move in a bad direction than not move at all
+      if (best == null && rc.isReady()) {
+        if (exploring) {
           target = retarget();
-        return false;
+          return false;
+        } else {
+          MapLocation[] others = { loc.add(dir.rotateLeft().rotateLeft()), loc.add(dir.rotateRight().rotateRight()) };
+          for (MapLocation i : others) {
+            // Don't occupy EC spawning spaces
+            if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
+              continue;
+
+            if (rc.sensePassability(i) > best_pass) {
+              best = i;
+              best_pass = rc.sensePassability(i);
+            }
+          }
+        }
       }
+      if (best == null)
+        return false;
       dir = loc.directionTo(best);
 
       Comms.setNeutralFlag();
@@ -65,101 +83,191 @@ public class Robot {
     }
   }
 
-  static void polTurn() throws GameActionException {
-    // Decide whether it's worth it to empower
-    RobotInfo strongest = null;
-    enemies.clear();
-    // radii^2: 1, 2, 4, 9
-    int[] rcounts = { 0, 0, 0, 0 };
-    int[] damages = { 0, 0, 0, 0 };
-    int nfpols = 0;
-    boolean lower_hp_friendly_pol_in_range = false;
-    boolean enemy_muckraker_in_range = false;
-    MapLocation loc = rc.getLocation();
+  static void circleEC(double dist) {
+    double x = rc.getLocation().x - Comms.ec.x;
+    double y = rc.getLocation().y - Comms.ec.y;
+    double theta = Math.atan2(y, x);
+    theta += 0.5;
+    x = dist * Math.cos(theta);
+    y = dist * Math.sin(theta);
+    target = Comms.ec.translate((int) x, (int) y);
+    targetMove();
+  }
 
-    // First pass: accumulate total number of affected units for each radius
+  static ArrayList<RobotInfo> affected = new ArrayList<RobotInfo>();
+
+  /**
+   * Runs most of a politician's turn, after updating comms. Figures out whether
+   * to empower and where to move.
+   */
+  static void polTurn() throws GameActionException {
+    MapLocation loc = rc.getLocation();
+    Team team = rc.getTeam();
+
+    // A politician has 2 goals:
+    // 1. Deal damage to enemy units, especially ECs
+    // 2. Protect friendly slanderers, and our ECs
+
+    // When it's worth it to empower depends on how much conviction this unit has.
+    // If it's <=10, empowering won't do anything, so we should just block things
+    // and wait for others to possibly heal us to >10 conviction.
+
+    // We'll start by looking at what's around us.
+    // We want to figure out how many units total are in each possible empowering
+    // radius, which damage would be divided between.
+    final int[] radii = { 1, 2, 4, 9 }; // These are squared
+    int[] rcounts = { 0, 0, 0, 0 };
+    // We also keep track of how many politicians are near here
+    // We'll see slanderers as politicians, so subtract those first
+    int nfpols = -Comms.friendly_slanderers.size();
+    affected.clear();
+    // We also want to know where enemy muckrakers are, so we can protect slanderers
+    // We just look at the closest muckraker
+    RobotInfo muckraker = null;
     for (RobotInfo i : Comms.nearby) {
-      Team team2 = i.team;
-      RobotType ty2 = i.type;
-      MapLocation loc2 = i.location;
-      int dist2 = loc2.distanceSquaredTo(loc);
-      if (team2 == team && ty2 == POLITICIAN) {
-        if (!lower_hp_friendly_pol_in_range && i.conviction < rc.getConviction()
-            && dist2 < POLITICIAN.actionRadiusSquared)
-          lower_hp_friendly_pol_in_range = true;
+      int dist2 = i.location.distanceSquaredTo(loc);
+
+      if (i.team != team && i.type == MUCKRAKER
+          && (muckraker == null || dist2 < muckraker.location.distanceSquaredTo(loc)))
+        muckraker = i;
+      else if (i.team == team && i.type == POLITICIAN)
         nfpols++;
-      }
+
       if (dist2 < POLITICIAN.actionRadiusSquared) {
-        if (team2 != team) {
-          if (ty2 == MUCKRAKER || ty2 == ENLIGHTENMENT_CENTER)
-            enemy_muckraker_in_range = true;
-          enemies.add(i);
-        }
+        // If it could recieve damage or healing from this politician, add it to
+        // `affected` so we can process it later
+        if (i.team != team || i.conviction < i.influence || i.type == ENLIGHTENMENT_CENTER)
+          affected.add(i);
 
         for (int r = 0; r < rcounts.length; r++) {
-          int r2 = (r <= 1) ? r + 1 : r * r;
+          int r2 = radii[r];
           if (dist2 < r2)
             rcounts[r]++;
         }
-      } else if (team2 != team && (ty2 == RobotType.MUCKRAKER || i.conviction > 10)
-          && (strongest == null || i.conviction > strongest.conviction))
-        strongest = i;
+      }
     }
 
-    // Second pass: accumulate total damage for each radius
-    for (RobotInfo i : enemies) {
+    // We also pick a slanderer to protect.
+    // If we've found a muckraker, we pick the closest one to the muckraker, since
+    // it's in the most danger.
+    // Otherwise, we pick the closest one to us.
+    RobotInfo slanderer = null;
+    MapLocation rloc = (muckraker == null) ? loc : muckraker.location;
+    for (RobotInfo i : Comms.friendly_slanderers) {
+      if (slanderer == null || i.location.distanceSquaredTo(rloc) < slanderer.location.distanceSquaredTo(rloc))
+        slanderer = i;
+    }
+
+    // If the muckraker will be able to kill the slanderer after moving, and we can
+    // kill the muckraker, and the slanderer has higher influence than we have
+    // conviction (which is usually true), then we need to kill the muckraker so it
+    // doesn't kill the slanderer.
+    if (muckraker != null && slanderer != null
+    // The muckraker will be in kill distance after moving once
+        && muckraker.location.add(muckraker.location.directionTo(slanderer.location))
+            .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+        // We're in kill distance of the muckraker now (radii[3] is the maximum radius
+        // for empowering)
+        && muckraker.location.isWithinDistanceSquared(loc, radii[3])
+        // We can actually kill the muckraker
+        && muckraker.conviction <= (rc.getConviction() - 10) / rcounts[3]
+        // The slanderer is worth saving
+        && slanderer.influence >= rc.getConviction()) {
+      if (rc.canEmpower(radii[3])) {
+        rc.empower(radii[3]);
+        return;
+      }
+    }
+
+    // If there's a muckraker threatening a slanderer, but we're not going to blow
+    // it up right now, we should at least try to block it
+    if (muckraker != null && slanderer != null) {
+      // Aim for a point in between the muckraker and the slanderer
+      // We want to keep the muckraker more than sqrt(12) ~= 3.5 squares away, so we
+      // aim for three squares towards the muckraker from the slanderer
+
+      // Start by creating a unit vector
+      double x = muckraker.location.x - slanderer.location.x;
+      double y = muckraker.location.y - slanderer.location.y;
+      double r = Math.sqrt(x * x + y * y);
+      x = x / r;
+      y = y / r;
+
+      // Then offset by three and add to the slanderer location, and move there
+      x *= 3;
+      y *= 3;
+      target = slanderer.location.translate((int) x, (int) y);
+      targetMove();
+      return;
+    }
+
+    // Otherwise, we're not immediately worrying about protecting slanderers, so
+    // figure out whether it's worth it to empower.
+
+    // Calculate total damage done for each possible radius
+    int useful_conv = rc.getConviction() - 10;
+    int[] totals = { 0, 0, 0, 0 };
+    boolean[] hits_enemy = { false, false, false, false };
+    for (RobotInfo i : affected) {
+      int dist2 = i.location.distanceSquaredTo(loc);
+
+      // Make sure pols don't crowd enemy ECs and not do anything
+      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 == radii[0])
+        totals[0] += useful_conv / 2;
+
       for (int r = 0; r < rcounts.length; r++) {
-        int r2 = (r <= 1) ? r + 1 : r * r;
-        if (rcounts[r] > 0) {
-          int damage_per = (rc.getConviction() - 10) / rcounts[r];
-          if (i.location.isWithinDistanceSquared(loc, r2)) {
-            // If we can kill an enemy EC, that's worth it even if it's not a great deal
-            if (i.type == RobotType.ENLIGHTENMENT_CENTER && i.conviction <= damage_per)
-              damages[r] += 200;
-            else
-              damages[r] += Math.min(i.conviction, damage_per);
-            // TODO: should we consider healing or damage after conversion for politicians?
-          }
+        int r2 = radii[r];
+        if (dist2 < r2) {
+          hits_enemy[r] |= i.team != team;
+          totals[r] += Math.min(useful_conv / rcounts[r],
+              // We can contribute as much as we want to friendly ECs, and extra damage done
+              // to enemy ECs rolls over into when it's friendly
+              (i.type == ENLIGHTENMENT_CENTER) ? 10000 :
+              // Our units can only heal upto their cap
+                  (i.team == team ? i.influence - i.conviction :
+                  // Enemy muckrakers with e.g. 1 conviction count as 10 in the calculation so we
+                  // actually kill them
+                      ((i.type == MUCKRAKER && i.conviction <= 10) ? 10 : i.conviction)));
         }
       }
     }
 
-    // Find the radius with the highest damage
+    // Find the radius with the highest total damage, but only count when we do
+    // damage to enemies
+    // Otherwise we'd be net losing money unless we have a big muckraker buff
     int max_r2 = 9;
     int max_damage = 0;
-    for (int r = 0; r < rcounts.length; r++) {
-      int r2 = (r <= 1) ? r + 1 : r * r;
-      int damage = damages[r];
-      if (damage > max_damage) {
+    for (int r = 0; r < totals.length; r++) {
+      int r2 = radii[r];
+      int damage = totals[r];
+      if (hits_enemy[r] && damage > max_damage) {
         max_r2 = r2;
         max_damage = damage;
       }
     }
 
-    // Empower if we'd be using at least one third of our conviction
-    if (rc.getConviction() <= 3 * max_damage && rc.canEmpower(max_r2)) {
+    // Empower if we'd be using at least half of our conviction, not counting tax;
+    // or if there are a ton of politicians around, so this one's life isn't worth
+    // much
+    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 20)) && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
-    } else {
-      if (strongest != null) {
-        // Move towards the unit with the highest conviction to get it in empowering
-        // range
-        target = strongest.location;
-        if (targetMove())
-          return;
-      }
-      if (enemy_muckraker_in_range && !lower_hp_friendly_pol_in_range && rc.canEmpower(max_r2)) {
-        // Without this, enemy 1inf muckrakers could wander around and kill all our
-        // slanderers without our pols doing anything
-        // This way, it's the pol with the lowest conviction's job to kill small units
-        rc.empower(max_r2);
-      }
+      return;
     }
 
-    // Now moving. If we're far enough away from the EC, or we have lots of units
-    // already, we're in exploring mode
-    exploring = (ec == null || !ec.isWithinDistanceSquared(loc, 100) || nfpols > 24);
-    if (exploring) {
-      // Target enemy ECs if possible
+    // Now we've decided we're not empowering, so we can move.
+    // If there are slanderers nearby, we want to be able to protect them, so stay
+    // close. Unless there are too many politicians already here.
+    // We want to be about 2 units away.
+    // So, for a target, we circle the EC 2 units farther out than the slanderer we
+    // picked earlier.
+    if (ec != null && slanderer != null && nfpols < 20) {
+      double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
+      // Offset by 2.7 to make sure it rounds right
+      circleEC(r + 2.7);
+    } else {
+      // If there aren't any slanderers nearby (or we just don't have an EC, which is
+      // rare), we explore, targeting enemy ECs if available
+
       MapLocation target_ec = null;
       int ec_dist2 = 1000000;
       for (MapLocation ec : Comms.enemy_ecs) {
@@ -172,27 +280,7 @@ public class Robot {
       if (target_ec != null)
         target = target_ec;
 
-      targetMove();
-    } else if (ec != null) {
-
-      // Otherwise, we're in defense mode, so circle the EC
-      // This code goes in a spiral, pointing away from the EC then turning 90 degrees
-      // to the left each turn
-      double a = Math.toRadians(90);
-      double sina = Math.sin(a);
-      double cosa = Math.cos(a);
-
-      double x = (rc.getLocation().x - ec.x) / 64.0;
-      double y = (rc.getLocation().y - ec.y) / 64.0;
-      double r = Math.sqrt(x * x + y * y);
-      double ux = x / r;
-      double uy = y / r;
-      double tx = cosa * ux - sina * uy;
-      double ty = sina * ux + cosa * uy;
-      int dx = (int) (tx * 3);
-      int dy = (int) (ty * 3);
-      target = rc.getLocation().translate(dx, dy);
-      targetMove();
+      targetMove(true);
     }
   }
 
@@ -229,26 +317,12 @@ public class Robot {
 
     switch (rc.getType()) {
     case SLANDERER:
-      // Slanderers always circle the EC
+      // Slanderers always circle the EC, unless they don't have one
       if (ec != null) {
-        // This code goes in a spiral, pointing away from the EC then turning 110
-        // degrees (a tighter spiral than the pols) to the left each turn
-        double a = Math.toRadians(110);
-        double sina = Math.sin(a);
-        double cosa = Math.cos(a);
-
-        double x = (rc.getLocation().x - ec.x) / 64.0;
-        double y = (rc.getLocation().y - ec.y) / 64.0;
-        double r = Math.sqrt(x * x + y * y);
-        double ux = x / r;
-        double uy = y / r;
-        double tx = cosa * ux - sina * uy;
-        double ty = sina * ux + cosa * uy;
-        int dx = (int) (tx * 3);
-        int dy = (int) (ty * 3);
-        target = rc.getLocation().translate(dx, dy);
+        circleEC(4);
+      } else {
+        targetMove(true);
       }
-      targetMove();
       break;
     case POLITICIAN: {
       polTurn();
