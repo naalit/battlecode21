@@ -19,36 +19,73 @@ public class ECenter {
     return Direction.NORTH;
   }
 
+  static boolean is_enemy_nearby = false;
+  static boolean is_muckraker_nearby = false;
+  static int npols = 0;
+  static int nslans = 0;
+
+  static void update() {
+    is_enemy_nearby = false;
+    is_muckraker_nearby = false;
+    npols = 0;
+    nslans = 0;
+    Team team = rc.getTeam();
+    MapLocation loc = rc.getLocation();
+    // A muckraker within this squared radius could instantly kill any slanderer we
+    // spawn, so we shouldn't spawn slanderers
+    int radius = 16;
+    for (RobotInfo i : Comms.nearby) {
+      if (i.team != team) {
+        is_enemy_nearby = true;
+        if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
+          is_muckraker_nearby = true;
+        }
+      } else {
+        // Count the number of politicians and slanderers around
+        if (i.type == POLITICIAN)
+          npols++;
+        else if (i.type == SLANDERER)
+          nslans++;
+      }
+    }
+  }
+
+  /**
+   * Since there's a floor function involved in the slanderer income function, we
+   * only pick the lowest starting influence in each income bracket
+   */
+  final static int[] slanderer_infs = { 949, 902, 855, 810, 766, 724, 683, 643, 605, 568, 532, 497, 463, 431, 399, 368,
+      339, 310, 282, 255, 228, 203, 178, 154, 130, 107 };//, 85, 63, 41, 21 };
+
   final static int[] pol_infs = { 25, 25, 50, 25, 25, 50, 25, 25, 200 };
   static int pol_inf_cursor = 0;
 
   static int influenceFor(RobotType type) {
+    // Calculate the amount we're willing to spend this turn.
+    // If there are enemies nearby, we don't want them to take our EC, so the amount
+    // we want to keep in the EC is higher.
+    int total = rc.getInfluence();
+    int keep = is_enemy_nearby ? Math.min(total / 2, 500) : 40;
+    int spend = total - keep;
+
     switch (type) {
     case MUCKRAKER:
       // There isn't much reason to spawn a muckraker with more than 1 influence,
       // since it can still expose just as well
       return 1;
     case SLANDERER: {
-      // Since there's a floor function involved in the slanderer income function, we
-      // only pick the lowest starting influence in each income bracket
-      // Here, we use the maximum of 130, but we might want to go up to 207 or beyond
-      int inf = rc.getInfluence();
-      if (inf > 150)
-        return 130;
-      if (inf > 120)
-        return 107;
-      if (inf > 100)
-        return 85;
-      return 63;
+      for (int i : slanderer_infs) {
+        if (spend >= i)
+          return i;
+      }
+      // Returning 0 means canBuildRobot will always return false
+      return 0;
     }
     case POLITICIAN: {
-      int inf = pol_infs[pol_inf_cursor % pol_infs.length];
-      if (rc.getInfluence() >= 2 * inf) {
-        pol_inf_cursor++;
-        return inf;
-      } else {
+      if (npols > 10)// && pol_inf_cursor % 2 == 0)
+        return Math.min(spend, 400);
+      else
         return 25;
-      }
     }
     default:
       System.out.println("Not a spawnable type: " + type);
@@ -58,22 +95,14 @@ public class ECenter {
 
   static void turn() throws GameActionException {
     Comms.update();
+    update();
 
-    // Spawn whatever there's less of near the EC, pols or slanderers
-    int npols = 0, nslans = 0;
-    for (RobotInfo i : Comms.nearby) {
-      if (i.team == rc.getTeam()) {
-        if (i.type == POLITICIAN)
-          npols++;
-        else if (i.type == SLANDERER)
-          nslans++;
-      }
-    }
-
-    RobotType type = npols < nslans ? POLITICIAN : SLANDERER;
+    RobotType type = (is_muckraker_nearby) ? POLITICIAN : (npols < nslans ? POLITICIAN : SLANDERER);
     Direction dir = openDirection();
     int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {
+      if (type == POLITICIAN)
+        pol_inf_cursor += 1;
       rc.buildRobot(type, dir, inf);
     }
 

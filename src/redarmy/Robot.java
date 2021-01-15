@@ -176,8 +176,8 @@ public class Robot {
         // We're in kill distance of the muckraker now (radii[3] is the maximum radius
         // for empowering)
         && muckraker.location.isWithinDistanceSquared(loc, radii[3])
-        // We can actually kill the muckraker
-        && muckraker.conviction <= (rc.getConviction() - 10) / rcounts[3]
+        // We can do damage
+        && rc.getConviction() > 10
         // The slanderer is worth saving
         && slanderer.influence >= rc.getConviction()) {
       if (rc.canEmpower(radii[3])) {
