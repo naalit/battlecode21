@@ -6,7 +6,6 @@ import static battlecode.common.RobotType.*;
 
 public class Robot {
   static RobotController rc;
-  static ArrayList<RobotInfo> enemies = new ArrayList<RobotInfo>();
   static Team team;
   static MapLocation ec;
   static boolean moved_yet = false;
@@ -30,8 +29,7 @@ public class Robot {
 
       rc.setIndicatorLine(loc, target, 0, 255, 0);
 
-      Direction to_dir = loc.directionTo(target);
-      Direction dir = to_dir;
+      Direction dir = loc.directionTo(target);
 
       // Try going around obstacles, first left, then right
       MapLocation[] options = { loc.add(dir), loc.add(dir.rotateLeft()), loc.add(dir.rotateRight()) };
@@ -94,7 +92,7 @@ public class Robot {
     targetMove();
   }
 
-  static ArrayList<RobotInfo> affected = new ArrayList<RobotInfo>();
+  static ArrayList<RobotInfo> affected = new ArrayList<>();
 
   /**
    * Runs most of a politician's turn, after updating comms. Figures out whether
