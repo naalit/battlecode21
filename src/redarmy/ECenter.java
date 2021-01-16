@@ -6,6 +6,31 @@ import static battlecode.common.RobotType.*;
 public class ECenter {
   static RobotController rc;
 
+  static int last_votes;
+  static boolean bid_last_round = false;
+  // We start by bidding 1, and then if we lose, we increment our bid by 1
+  static int current_bid = 1;
+
+  static void doBid() throws GameActionException {
+    // No reason to bid for votes past a majority
+    if (last_votes > 750)
+      return;
+    // If our votes didn't change, we lost, and need to bid higher.
+    boolean lost_last_round = bid_last_round && rc.getTeamVotes() == last_votes;
+    last_votes = rc.getTeamVotes();
+    if (lost_last_round) {
+      current_bid += 1;
+    }
+    // We focus on destroying them instead of winning votes, so we only bid if it's
+    // 10% or less of our influence
+    if (current_bid <= rc.getInfluence() / 10) {
+      bid_last_round = true;
+      rc.bid(current_bid);
+    } else {
+      bid_last_round = false;
+    }
+  }
+
   /**
    * Returns the next direction where we can spawn something.
    */
@@ -113,12 +138,15 @@ public class ECenter {
       rc.buildRobot(type, dir, inf);
     }
 
+    doBid();
+
     Comms.finish();
   }
 
   public static void run(RobotController rc) {
     Comms.start(rc);
     ECenter.rc = rc;
+    last_votes = rc.getTeamVotes();
 
     while (true) {
       try {
