@@ -221,7 +221,7 @@ public class Robot {
     // figure out whether it's worth it to empower.
 
     // Calculate total damage done for each possible radius
-    int useful_conv = rc.getConviction() - 10;
+    int useful_conv = (int) (rc.getConviction() * rc.getEmpowerFactor(rc.getTeam(), 0)) - 10;
     int[] totals = { 0, 0, 0, 0 };
     boolean[] hits_enemy = { false, false, false, false };
     for (RobotInfo i : affected) {
@@ -256,7 +256,7 @@ public class Robot {
     for (int r = 0; r < totals.length; r++) {
       int r2 = radii[r];
       int damage = totals[r];
-      if (hits_enemy[r] && damage > max_damage) {
+      if ((hits_enemy[r] || damage > useful_conv) && damage > max_damage) {
         max_r2 = r2;
         max_damage = damage;
       }

@@ -13,7 +13,7 @@ public class ECenter {
 
   static void doBid() throws GameActionException {
     // No reason to bid for votes past a majority
-    if (last_votes > 750)
+    if (last_votes > 750 || rc.getRoundNum() < 50)
       return;
     // If our votes didn't change, we lost, and need to bid higher.
     boolean lost_last_round = bid_last_round && rc.getTeamVotes() == last_votes;
