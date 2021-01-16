@@ -329,7 +329,7 @@ public class Robot {
         }
       }
     }
-    if (strongest_close != null) {
+    if (strongest_close != null && rc.canExpose(strongest_close.location)) {
       rc.expose(strongest_close.location);
     } else if (strongest_far != null) {
       // Move towards any slanderers that aren't in range yet

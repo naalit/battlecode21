@@ -2,6 +2,7 @@ package redarmy;
 
 import battlecode.common.*;
 import static battlecode.common.RobotType.*;
+import static battlecode.common.Direction.*;
 
 public class ECenter {
   static RobotController rc;
@@ -13,7 +14,9 @@ public class ECenter {
 
   static void doBid() throws GameActionException {
     // No reason to bid for votes past a majority
-    if (last_votes > 750 || rc.getRoundNum() < 50)
+    // Also, if we bid too early our economy gets set up slower, and if we bid when
+    // we have low conviction we never spawn slanderers
+    if (last_votes > 750 || rc.getRoundNum() < 50 || rc.getConviction() < 200)
       return;
     // If our votes didn't change, we lost, and need to bid higher.
     boolean lost_last_round = bid_last_round && rc.getTeamVotes() == last_votes;
@@ -31,11 +34,19 @@ public class ECenter {
     }
   }
 
+  static final Direction[] directions = { NORTH, SOUTH, WEST, EAST, NORTHWEST, SOUTHEAST, NORTHEAST, SOUTHWEST };
+  static int dir_cursor = -1;
+
   /**
    * Returns the next direction where we can spawn something.
    */
   static Direction openDirection() throws GameActionException {
-    for (Direction dir : Direction.values()) {
+    for (Direction dir : directions) {// int i = 0; i < directions.length; i++) {
+      // dir_cursor++;
+      // if (dir_cursor >= directions.length) {
+      // dir_cursor = 0;
+      // }
+      // Direction dir = directions[dir_cursor];
       MapLocation l = rc.getLocation().add(dir);
       if (rc.onTheMap(l) && !rc.isLocationOccupied(l))
         return dir;
@@ -129,7 +140,7 @@ public class ECenter {
     update();
 
     RobotType type = nmuks == 0 && npols > 1 && nslans > 1 ? MUCKRAKER
-        : (is_muckraker_nearby ? POLITICIAN : (npols < nslans ? POLITICIAN : SLANDERER));
+        : (is_muckraker_nearby ? POLITICIAN : (npols * 2 < nslans ? POLITICIAN : SLANDERER));
     Direction dir = openDirection();
     int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {
