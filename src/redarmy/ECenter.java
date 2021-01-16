@@ -23,12 +23,14 @@ public class ECenter {
   static boolean is_muckraker_nearby = false;
   static int npols = 0;
   static int nslans = 0;
+  static int nmuks = 0;
 
   static void update() {
     is_enemy_nearby = false;
     is_muckraker_nearby = false;
     npols = 0;
     nslans = 0;
+    nmuks = 0;
     Team team = rc.getTeam();
     MapLocation loc = rc.getLocation();
     // A muckraker within this squared radius could instantly kill any slanderer we
@@ -46,6 +48,8 @@ public class ECenter {
           npols++;
         else if (i.type == SLANDERER)
           nslans++;
+        else if (i.type == MUCKRAKER)
+          nmuks++;
       }
     }
   }
@@ -55,7 +59,7 @@ public class ECenter {
    * only pick the lowest starting influence in each income bracket
    */
   final static int[] slanderer_infs = { 949, 902, 855, 810, 766, 724, 683, 643, 605, 568, 532, 497, 463, 431, 399, 368,
-      339, 310, 282, 255, 228, 203, 178, 154, 130, 107 };//, 85, 63, 41, 21 };
+      339, 310, 282, 255, 228, 203, 178, 154, 130, 107 };// , 85, 63, 41, 21 };
 
   final static int[] pol_infs = { 25, 25, 50, 25, 25, 50, 25, 25, 200 };
   static int pol_inf_cursor = 0;
@@ -99,7 +103,8 @@ public class ECenter {
     Comms.update();
     update();
 
-    RobotType type = (is_muckraker_nearby) ? POLITICIAN : (npols < nslans ? POLITICIAN : SLANDERER);
+    RobotType type = nmuks == 0 && npols > 1 && nslans > 1 ? MUCKRAKER
+        : (is_muckraker_nearby ? POLITICIAN : (npols < nslans ? POLITICIAN : SLANDERER));
     Direction dir = openDirection();
     int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {

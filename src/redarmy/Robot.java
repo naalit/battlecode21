@@ -312,6 +312,34 @@ public class Robot {
     }
   }
 
+  static void mukTurn() throws GameActionException {
+    // Target the slanderer with the highest influence (which generates the most
+    // money) in range
+    Team enemy = rc.getTeam().opponent();
+    RobotInfo strongest_close = null;
+    RobotInfo strongest_far = null;
+    for (RobotInfo i : Comms.nearby) {
+      if (i.team == enemy && i.type == SLANDERER) {
+        if (i.location.isWithinDistanceSquared(rc.getLocation(), MUCKRAKER.actionRadiusSquared)) {
+          if (strongest_close == null || i.influence > strongest_close.influence)
+            strongest_close = i;
+        } else {
+          if (strongest_far == null || i.influence > strongest_far.influence)
+            strongest_far = i;
+        }
+      }
+    }
+    if (strongest_close != null) {
+      rc.expose(strongest_close.location);
+    } else if (strongest_far != null) {
+      // Move towards any slanderers that aren't in range yet
+      target = strongest_far.location;
+    }
+
+    // Wander around constantly
+    targetMove(true);
+  }
+
   static int retarget_acc;
 
   // Switch to a new random target
@@ -349,6 +377,9 @@ public class Robot {
       break;
     case POLITICIAN:
       polTurn();
+      break;
+    case MUCKRAKER:
+      mukTurn();
       break;
     default:
       System.out.println("NO MOVEMENT CODE FOR " + rc.getType());
