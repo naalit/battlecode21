@@ -10,8 +10,8 @@ public class Comms {
   public static ArrayList<MapLocation> enemy_ecs = new ArrayList<MapLocation>();
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<RobotInfo>();
   /**
-   * Keeps track of the total amount of conviction by friendly slanderers in range,
-   * used to calculate average politician conviction.
+   * Keeps track of the total amount of conviction by friendly slanderers in
+   * range, used to calculate average politician conviction.
    */
   public static int total_fslan_conv = 0;
   static RobotController rc;

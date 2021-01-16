@@ -82,10 +82,12 @@ public class ECenter {
       return 0;
     }
     case POLITICIAN: {
-      if (npols > 10)// && pol_inf_cursor % 2 == 0)
-        return Math.min(spend, 400);
-      else
+      if (npols > 10 && spend >= 20 && pol_inf_cursor % 2 == 0)
+        return Math.min(spend, 200);
+      else if (spend >= 25)
         return 25;
+      else
+        return 0;
     }
     default:
       System.out.println("Not a spawnable type: " + type);

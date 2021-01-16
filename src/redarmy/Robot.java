@@ -82,13 +82,21 @@ public class Robot {
   }
 
   static void circleEC(double dist) {
-    double x = rc.getLocation().x - Comms.ec.x;
-    double y = rc.getLocation().y - Comms.ec.y;
-    double theta = Math.atan2(y, x);
-    theta += 0.5;
-    x = dist * Math.cos(theta);
-    y = dist * Math.sin(theta);
-    target = Comms.ec.translate((int) x, (int) y);
+    int r2 = (int) (dist * dist);
+    Direction closest = null;
+    int closest_d = 10000;
+    for (Direction dir : Direction.values()) {
+      if (rc.canMove(dir)) {
+        MapLocation l = rc.getLocation().add(dir);
+        int d = Math.abs(l.distanceSquaredTo(ec) - r2);
+        if (d < closest_d) {
+          closest = dir;
+          closest_d = d;
+        }
+      }
+    }
+    if (closest != null)
+      target = rc.getLocation().add(closest);
     targetMove();
   }
 
@@ -115,7 +123,8 @@ public class Robot {
     // radius, which damage would be divided between.
     final int[] radii = { 1, 2, 4, 9 }; // These are squared
     int[] rcounts = { 0, 0, 0, 0 };
-    // We also keep track of how many politicians are near here, and their average conviction
+    // We also keep track of how many politicians are near here, and their average
+    // conviction
     // We'll see slanderers as politicians, so subtract those first
     int nfpols = -Comms.friendly_slanderers.size();
     int fpol_conv = -Comms.total_fslan_conv;
@@ -164,13 +173,12 @@ public class Robot {
     // conviction (which is usually true), then we need to kill the muckraker so it
     // doesn't kill the slanderer.
     if (muckraker != null && slanderer != null
-        // Either the muckraker is in kill distance now, or will be in after moving once and can move
+    // Either the muckraker is in kill distance now, or will be in after moving once
+    // and can move
         && (muckraker.location.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-           || (
-                muckraker.location.add(muckraker.location.directionTo(slanderer.location))
-                    .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-                && !rc.isLocationOccupied(muckraker.location.add(muckraker.location.directionTo(slanderer.location)))
-            ))
+            || (muckraker.location.add(muckraker.location.directionTo(slanderer.location))
+                .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                && !rc.isLocationOccupied(muckraker.location.add(muckraker.location.directionTo(slanderer.location)))))
         // We're in kill distance of the muckraker now (radii[3] is the maximum radius
         // for empowering)
         && muckraker.location.isWithinDistanceSquared(loc, radii[3])
@@ -186,7 +194,10 @@ public class Robot {
 
     // If there's a muckraker threatening a slanderer, but we're not going to blow
     // it up right now, we should at least try to block it
-    if (muckraker != null && slanderer != null) {
+    if (muckraker != null && slanderer != null
+    // If there are a lot of politicians and we're fairly far away, it's another
+    // politician's job
+        && (nfpols < 10 || loc.isWithinDistanceSquared(muckraker.location, 18))) {
       // Aim for a point in between the muckraker and the slanderer
       // We want to keep the muckraker more than sqrt(12) ~= 3.5 squares away, so we
       // aim for three squares towards the muckraker from the slanderer
@@ -224,15 +235,15 @@ public class Robot {
         int r2 = radii[r];
         if (dist2 <= r2) {
           hits_enemy[r] |= i.team != team;
-          totals[r] += Math.min(useful_conv / rcounts[r],
+          // Sometimes units end up with 0 conviction, but still need to be hit
+          // Also, we assume remainder damage (if rcounts[r] > useful_conv) is given to
+          // everyone, not in the order it actually is, for efficiency
+          totals[r] += Math.max(1, Math.min(useful_conv / rcounts[r],
               // We can contribute as much as we want to friendly ECs, and extra damage done
               // to enemy ECs rolls over into when it's friendly
               (i.type == ENLIGHTENMENT_CENTER) ? 10000 :
               // Our units can only heal upto their cap
-                  (i.team == team ? i.influence - i.conviction :
-                  // Enemy muckrakers with e.g. 1 conviction count as 10 in the calculation so we
-                  // actually kill them
-                      ((i.type == MUCKRAKER && i.conviction <= 10) ? 10 : i.conviction)));
+                  (i.team == team ? i.influence - i.conviction : i.conviction)));
         }
       }
     }
@@ -252,10 +263,12 @@ public class Robot {
     }
 
     // Empower if we'd be using at least half of our conviction, not counting tax;
-    // or if there are a ton of politicians around and this one is at or below average,
+    // or if there are a ton of politicians around and this one is at or below
+    // average,
     // so its life isn't worth much
     int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
-    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 20 && rc.getConviction() <= avg_conv)) && rc.canEmpower(max_r2)) {
+    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
+        && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return;
     }
@@ -266,7 +279,7 @@ public class Robot {
     // We want to be about 2 units away.
     // So, for a target, we circle the EC 2 units farther out than the slanderer we
     // picked earlier.
-    if (ec != null && slanderer != null && nfpols < 20) {
+    if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 8 || rc.getConviction() < 100)) {
       double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
       // Offset by 2.7 to make sure it rounds right
       circleEC(r + 2.7);
@@ -286,6 +299,15 @@ public class Robot {
       if (target_ec != null)
         target = target_ec;
 
+      targetMove(true);
+    }
+  }
+
+  static void slanTurn() throws GameActionException {
+    if (ec != null) {
+      // Slanderers circle the EC, if they have one
+      circleEC(3);
+    } else {
       targetMove(true);
     }
   }
@@ -323,17 +345,11 @@ public class Robot {
 
     switch (rc.getType()) {
     case SLANDERER:
-      // Slanderers always circle the EC, unless they don't have one
-      if (ec != null) {
-        circleEC(4);
-      } else {
-        targetMove(true);
-      }
+      slanTurn();
       break;
-    case POLITICIAN: {
+    case POLITICIAN:
       polTurn();
       break;
-    }
     default:
       System.out.println("NO MOVEMENT CODE FOR " + rc.getType());
       rc.resign();
