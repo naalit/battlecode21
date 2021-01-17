@@ -36,6 +36,9 @@ public class Comms {
     }
   }
 
+  static MapLocation reinforce_loc = null;
+  static MapLocation muckraker = null;
+
   /**
    * Puts nearby units into `nearby`, reads flags, and updates the list of enemy
    * ECs.
@@ -59,6 +62,10 @@ public class Comms {
         enemy_ecs.remove(flag.loc);
         break;
 
+      case Reinforcements:
+        reinforce_loc = flag.loc;
+        break;
+
       // As a robot, we know our home EC's location already
       case MyLocationX:
       case MyLocationY:
@@ -71,6 +78,7 @@ public class Comms {
     nearby = rc.senseNearbyRobots();
     friendly_slanderers.clear();
     total_fslan_conv = 0;
+    muckraker = null;
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -127,6 +135,8 @@ public class Comms {
           enemy_ecs.add(iloc);
           queue.add(new RFlag(RFlag.Type.EnemyEC, iloc));
         }
+      } else if (i.type == MUCKRAKER) {
+        muckraker = i.location;
       }
     }
   }

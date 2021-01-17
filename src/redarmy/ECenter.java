@@ -281,6 +281,8 @@ public class ECenter {
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
               break;
+            // Right now we don't send reinforcements to other ECs - we may later
+            case Reinforcements:
             case None:
               break;
             }
@@ -297,17 +299,9 @@ public class ECenter {
   }
 
   /**
-   * 0: we need to send, but haven't started yet.
-   *
-   * 1: we've waited one turn, so they definitely have us stored now.
-   *
-   * 2: now they're listening, so this turn we should send them our X coord.
-   *
-   * 3: and now the Y.
-   *
-   * 4: now we're done, so don't do anything until we meet another EC.
+   * 0: sending x, 1: sending y, 2: done.
    */
-  static int loc_send_stage = 4;
+  static int loc_send_stage = 2;
   static MapLocation cvt_pending = null;
 
   static void addFriendlyEC(int id) {
@@ -331,8 +325,16 @@ public class ECenter {
 
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
+  static MapLocation reinforce = null;
 
   static EFlag nextFlag() throws GameActionException {
+    if (reinforce != null) {
+      EFlag flag = new EFlag(EFlag.Type.Reinforcements, reinforce);
+      rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
+      reinforce = null;
+      return flag;
+    }
+
     if (cvt_pending != null) {
       EFlag flag = new EFlag(EFlag.Type.ConvertF, cvt_pending);
       cvt_pending = null;
@@ -392,6 +394,10 @@ public class ECenter {
     for (RobotInfo i : nearby) {
       if (i.team != team) {
         is_enemy_nearby = true;
+
+        if (i.type == MUCKRAKER)
+          reinforce = i.location;
+
         if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
           is_muckraker_nearby = true;
         }

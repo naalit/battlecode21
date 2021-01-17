@@ -69,7 +69,12 @@ public class EFlag {
     /**
      * We're registering that an EC has converted from enemy to friendly.
      */
-    ConvertF;
+    ConvertF,
+    /**
+     * We're noticing that a spot needs more defenses, and politicians should move
+     * there if not otherwise occupied.
+     */
+    Reinforcements;
 
     public static Type decode(int header) {
       switch (header) {
@@ -85,6 +90,8 @@ public class EFlag {
         return Type.MyLocationY;
       case 5:
         return Type.ConvertF;
+      case 6:
+        return Type.Reinforcements;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -104,6 +111,8 @@ public class EFlag {
         return 4;
       case ConvertF:
         return 5;
+      case Reinforcements:
+        return 6;
       }
       throw new RuntimeException("That's not possible");
     }

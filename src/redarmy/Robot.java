@@ -273,12 +273,17 @@ public class Robot {
     }
 
     // Now we've decided we're not empowering, so we can move.
-    // If there are slanderers nearby, we want to be able to protect them, so stay
-    // close. Unless there are too many politicians already here.
-    // We want to be about 2 units away.
-    // So, for a target, we circle the EC 2 units farther out than the slanderer we
-    // picked earlier.
-    if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 8 || rc.getConviction() < 100)) {
+    // If the EC has requested reinforcements somewhere, go there.
+    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256)) {
+      target = Comms.reinforce_loc;
+      Comms.reinforce_loc = null;
+      targetMove(true);
+    } else if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 10 || rc.getConviction() < 100)) {
+      // If there are slanderers nearby, we want to be able to protect them, so stay
+      // close. Unless there are too many politicians already here.
+      // We want to be about 2 units away.
+      // So, for a target, we circle the EC 2 units farther out than the slanderer we
+      // picked earlier.
       double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
       // Offset by 2.7 to make sure it rounds right
       circleEC(r + 2.7);
@@ -303,7 +308,12 @@ public class Robot {
   }
 
   static void slanTurn() throws GameActionException {
-    if (ec != null) {
+    // Run away from enemy muckrakers
+    if (Comms.muckraker != null ) {
+      Direction dir = Comms.muckraker.directionTo(rc.getLocation());
+      target = rc.adjacentLocation(dir).add(dir);
+      targetMove(false);
+    } else if (ec != null) {
       // Slanderers circle the EC, if they have one
       circleEC(3);
     } else {
