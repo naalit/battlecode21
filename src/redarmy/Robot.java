@@ -71,7 +71,6 @@ public class Robot {
         return false;
       dir = loc.directionTo(best);
 
-      Comms.setNeutralFlag();
       rc.move(dir);
       return true;
 
@@ -394,11 +393,6 @@ public class Robot {
     Robot.rc = rc;
     team = rc.getTeam();
     retarget_acc = rc.getID();
-    try {
-      Comms.setNeutralFlag();
-    } catch (GameActionException e) {
-      e.printStackTrace();
-    }
 
     while (true) {
       try {

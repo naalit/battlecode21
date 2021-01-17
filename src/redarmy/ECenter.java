@@ -1,5 +1,8 @@
 package redarmy;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import battlecode.common.*;
 import static battlecode.common.RobotType.*;
 import static battlecode.common.Direction.*;
@@ -34,6 +37,8 @@ public class ECenter {
     }
   }
 
+  // -- SPAWNING -- //
+
   static final Direction[] directions = { NORTH, SOUTH, WEST, EAST, NORTHWEST, SOUTHEAST, NORTHEAST, SOUTHWEST };
   static int dir_cursor = -1;
 
@@ -53,41 +58,6 @@ public class ECenter {
     }
 
     return Direction.NORTH;
-  }
-
-  static boolean is_enemy_nearby = false;
-  static boolean is_muckraker_nearby = false;
-  static int npols = 0;
-  static int nslans = 0;
-  static int nmuks = 0;
-
-  static void update() {
-    is_enemy_nearby = false;
-    is_muckraker_nearby = false;
-    npols = 0;
-    nslans = 0;
-    nmuks = 0;
-    Team team = rc.getTeam();
-    MapLocation loc = rc.getLocation();
-    // A muckraker within this squared radius could instantly kill any slanderer we
-    // spawn, so we shouldn't spawn slanderers
-    int radius = 16;
-    for (RobotInfo i : Comms.nearby) {
-      if (i.team != team) {
-        is_enemy_nearby = true;
-        if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
-          is_muckraker_nearby = true;
-        }
-      } else {
-        // Count the number of politicians and slanderers around
-        if (i.type == POLITICIAN)
-          npols++;
-        else if (i.type == SLANDERER)
-          nslans++;
-        else if (i.type == MUCKRAKER)
-          nmuks++;
-      }
-    }
   }
 
   /**
@@ -135,10 +105,7 @@ public class ECenter {
     }
   }
 
-  static void turn() throws GameActionException {
-    Comms.update();
-    update();
-
+  static void spawn() throws GameActionException {
     RobotType type = nmuks == 0 && npols > 1 && nslans > 1 ? MUCKRAKER
         : (is_muckraker_nearby ? POLITICIAN : (npols * 2 < nslans ? POLITICIAN : SLANDERER));
     Direction dir = openDirection();
@@ -147,15 +114,321 @@ public class ECenter {
       if (type == POLITICIAN)
         pol_inf_cursor += 1;
       rc.buildRobot(type, dir, inf);
+      MapLocation l = rc.adjacentLocation(dir);
+      addID(rc.senseRobotAtLocation(l).ID);
+    }
+  }
+
+  // -- COMMUNICATION -- //
+
+  static int[] ids = new int[300];
+  static int nempty = 300;
+  static int firstempty = 0;
+  static int endidx = 0;
+
+  static RobotInfo[] nearby;
+  static boolean is_enemy_nearby = false;
+  static boolean is_muckraker_nearby = false;
+  static int npols = 0;
+  static int nslans = 0;
+  static int nmuks = 0;
+
+  static void addID(int id) {
+    int len = ids.length;
+    if (endidx < len) {
+      if (firstempty == endidx)
+        firstempty++;
+      if (firstempty == len) {
+        // Find the first empty index
+        for (int i = 0; i < len; i++) {
+          if (ids[i] == 0) {
+            firstempty = i;
+            break;
+          }
+        }
+      }
+      ids[endidx] = id;
+      endidx++;
+      nempty--;
+    } else if (nempty > 0) {
+      nempty--;
+      ids[firstempty] = id;
+      if (nempty > 0) {
+        for (int i = firstempty + 1; i < len; i++) {
+          if (ids[i] == 0) {
+            firstempty = i;
+            break;
+          }
+        }
+      }
+    } else {
+      // Resize ids list; this costs `len * 3` bytecode, which isn't that bad!
+      // That's because Arrays.copyOf calls `newarray(newlen)` and then
+      // `System.arraycopy(len)`, both of which take bytecode equal to the length.
+      int new_len = len * 2;
+      ids = Arrays.copyOf(ids, new_len);
+      ids[len] = id;
+      nempty = len - 1;
+      firstempty = endidx = len + 1;
+    }
+  }
+
+  static void processFlag(int iflag) {
+    RFlag flag = RFlag.decode(rc.getLocation(), iflag);
+
+    switch (flag.type) {
+    case FriendlyEC:
+      addFriendlyEC(flag.id);
+      break;
+    case EnemyEC:
+      addEnemyEC(flag.loc);
+      break;
+    case ConvertF:
+      if (enemy_ecs.remove(flag.loc))
+        if (cvt_pending == null)
+          cvt_pending = flag.loc;
+      break;
+
+    // If it's talking to another EC, ignore it
+    case HelloEC:
+    case None:
+      break;
+    }
+  }
+
+  static int left_off = 0;
+
+  static void updateDistantFlags() {
+    // Bytecode costs:
+    // For a known-dead unit: 11
+    // For a newly-dead unit: 20 (I'm pretty sure getFlag throwing doesn't count)
+    // For an alive unit: 20+5
+    // For a flagging unit: 20+5 + flag processing cost
+    // If we assume on average, one unit died, 1/4 are dead already, and 1/20 are
+    // flagging, then it takes `20 + 0.25n*11 + 0.75n*25 + 0.75*0.05n*<processing>`
+    // If we say processing takes 200, then it's `20 + 29n`
+    // Which is around `29n`, so we can do 300 units in about 8700 bytecodes
+    // That's what we'll do each turn.
+    int end = Math.min(left_off + 300, endidx);
+    for (int i = left_off; i < end; i++) {
+      int id = ids[i];
+      if (id != 0) {
+        try {
+          int flag = rc.getFlag(id);
+          if ((flag & RFlag.HEADER_MASK) != 0) {
+            processFlag(flag);
+          }
+        } catch (GameActionException e) {
+          // The unit is dead, so add that
+          nempty++;
+          ids[i] = 0;
+        }
+      }
+    }
+    // Go back to the start next turn if we finished
+    left_off = end == endidx ? 0 : end;
+  }
+
+  static class ECInfo {
+    int id;
+    MapLocation loc = null;
+    int x = 0, y = 0;
+
+    ECInfo(int id) {
+      this.id = id;
+    }
+  }
+
+  static ArrayList<ECInfo> friendly_ecs = new ArrayList<>(8);
+
+  static void updateECFlags() {
+    for (int i = 0; i < friendly_ecs.size(); i++) {
+      try {
+        ECInfo ec = friendly_ecs.get(i);
+        int flag = rc.getFlag(ec.id);
+        if ((flag & EFlag.HEADER_MASK) != 0) {
+          EFlag f = EFlag.decode(ec.loc, flag);
+          // f will be null if we needed the location of the EC but haven't got it yet
+          if (f != null) {
+
+            switch (f.type) {
+            case FriendlyEC:
+              addFriendlyEC(f.id);
+              break;
+            case EnemyEC:
+              addEnemyEC(f.loc);
+              break;
+            case ConvertF:
+              if (enemy_ecs.remove(f.loc))
+                if (cvt_pending == null)
+                  cvt_pending = f.loc;
+              break;
+            case MyLocationX:
+              ec.x = f.id;
+              if (ec.y != 0) {
+                ec.loc = new MapLocation(ec.x, ec.y);
+                if (enemy_ecs.remove(ec.loc))
+                  cvt_pending = ec.loc;
+                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
+              }
+              break;
+            case MyLocationY:
+              ec.y = f.id;
+              if (ec.x != 0) {
+                ec.loc = new MapLocation(ec.x, ec.y);
+                if (enemy_ecs.remove(ec.loc))
+                  cvt_pending = ec.loc;
+                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
+              }
+              break;
+            case None:
+              break;
+            }
+
+          }
+        }
+      } catch (GameActionException e) {
+        // The EC is dead, so remove it
+        friendly_ecs.remove(i);
+        // Don't go past the end of the list
+        i--;
+      }
+    }
+  }
+
+  /**
+   * 0: we need to send, but haven't started yet.
+   *
+   * 1: we've waited one turn, so they definitely have us stored now.
+   *
+   * 2: now they're listening, so this turn we should send them our X coord.
+   *
+   * 3: and now the Y.
+   *
+   * 4: now we're done, so don't do anything until we meet another EC.
+   */
+  static int loc_send_stage = 4;
+  static MapLocation cvt_pending = null;
+
+  static void addFriendlyEC(int id) {
+    for (ECInfo i : friendly_ecs) {
+      if (i.id == id)
+        return;
+    }
+    friendly_ecs.add(new ECInfo(id));
+    // We need to tell this new EC our location
+    loc_send_stage = 0;
+  }
+
+  static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
+
+  static void addEnemyEC(MapLocation loc) {
+    if (!enemy_ecs.contains(loc)) {
+      enemy_ecs.add(loc);
+      rc.setIndicatorLine(rc.getLocation(), loc, 0, 0, 0);
+    }
+  }
+
+  static int enemy_ec_cursor = 0;
+  static int friendly_ec_cursor = 0;
+
+  static EFlag nextFlag() throws GameActionException {
+    if (cvt_pending != null) {
+      EFlag flag = new EFlag(EFlag.Type.ConvertF, cvt_pending);
+      cvt_pending = null;
+      return flag;
     }
 
-    doBid();
+    // If we need to share our location, do that
+    if (loc_send_stage < 2) {
+      loc_send_stage++;
+      if (loc_send_stage == 1)
+        return new EFlag(EFlag.Type.MyLocationX, rc.getLocation().x);
+      else if (loc_send_stage == 2)
+        return new EFlag(EFlag.Type.MyLocationY, rc.getLocation().y);
+    }
 
-    Comms.finish();
+    // Then share friendly ECs
+    if (friendly_ec_cursor < friendly_ecs.size()) {
+      ECInfo ec = friendly_ecs.get(friendly_ec_cursor++);
+      return new EFlag(EFlag.Type.FriendlyEC, ec.id);
+    }
+
+    // Otherwise, if we have enemy ECs stored, share those
+    if (enemy_ecs.size() > 0) {
+      if (enemy_ec_cursor >= enemy_ecs.size()) {
+        friendly_ec_cursor = 0;
+        enemy_ec_cursor = 0;
+        loc_send_stage = 0;
+      }
+      MapLocation loc = enemy_ecs.get(enemy_ec_cursor++);
+      return new EFlag(EFlag.Type.EnemyEC, loc);
+    }
+
+    // Nothing else to send
+    return new EFlag(EFlag.Type.None);
+  }
+
+  static void showFlag() throws GameActionException {
+    rc.setFlag(nextFlag().encode(rc.getLocation()));
+  }
+
+  static void update() throws GameActionException {
+    updateECFlags();
+    updateDistantFlags();
+
+    nearby = rc.senseNearbyRobots();
+
+    is_enemy_nearby = false;
+    is_muckraker_nearby = false;
+    npols = 0;
+    nslans = 0;
+    nmuks = 0;
+    Team team = rc.getTeam();
+    MapLocation loc = rc.getLocation();
+    // A muckraker within this squared radius could instantly kill any slanderer we
+    // spawn, so we shouldn't spawn slanderers
+    int radius = 16;
+    for (RobotInfo i : nearby) {
+      if (i.team != team) {
+        is_enemy_nearby = true;
+        if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
+          is_muckraker_nearby = true;
+        }
+      } else {
+        // Read the flag; we only care if it's HelloEC, otherwise we'll see it anyway
+        int flag = rc.getFlag(i.ID);
+        switch (RFlag.getType(flag)) {
+        case HelloEC:
+          RFlag f = RFlag.decode(null, flag);
+          addFriendlyEC(f.id);
+          break;
+        default:
+          break;
+        }
+
+        // Count the number of politicians and slanderers around
+        if (i.type == POLITICIAN)
+          npols++;
+        else if (i.type == SLANDERER)
+          nslans++;
+        else if (i.type == MUCKRAKER)
+          nmuks++;
+      }
+    }
+
+    showFlag();
+  }
+
+  static void turn() throws GameActionException {
+    update();
+
+    spawn();
+
+    doBid();
   }
 
   public static void run(RobotController rc) {
-    Comms.start(rc);
     ECenter.rc = rc;
     last_votes = rc.getTeamVotes();
 
