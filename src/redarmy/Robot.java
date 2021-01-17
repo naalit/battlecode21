@@ -278,7 +278,7 @@ public class Robot {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);
-    } else if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 10 || rc.getConviction() < 100)) {
+    } else if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 8 || rc.getConviction() < 100)) {
       // If there are slanderers nearby, we want to be able to protect them, so stay
       // close. Unless there are too many politicians already here.
       // We want to be about 2 units away.

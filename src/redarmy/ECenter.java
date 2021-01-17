@@ -107,7 +107,7 @@ public class ECenter {
 
   static void spawn() throws GameActionException {
     RobotType type = nmuks == 0 && npols > 1 && nslans > 1 ? MUCKRAKER
-        : (is_muckraker_nearby ? POLITICIAN : (npols * 2 < nslans ? POLITICIAN : SLANDERER));
+        : (is_muckraker_nearby ? POLITICIAN : (npols * 3 < nslans ? POLITICIAN : SLANDERER));
     Direction dir = openDirection();
     int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {
@@ -243,8 +243,8 @@ public class ECenter {
 
   static void updateECFlags() {
     for (int i = 0; i < friendly_ecs.size(); i++) {
+      ECInfo ec = friendly_ecs.get(i);
       try {
-        ECInfo ec = friendly_ecs.get(i);
         int flag = rc.getFlag(ec.id);
         if ((flag & EFlag.HEADER_MASK) != 0) {
           EFlag f = EFlag.decode(ec.loc, flag);
@@ -292,6 +292,9 @@ public class ECenter {
       } catch (GameActionException e) {
         // The EC is dead, so remove it
         friendly_ecs.remove(i);
+        // If it's dead, it now belongs to the enemy
+        if (ec.loc != null)
+          enemy_ecs.add(ec.loc);
         // Don't go past the end of the list
         i--;
       }
