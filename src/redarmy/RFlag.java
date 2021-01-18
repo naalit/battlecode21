@@ -65,7 +65,17 @@ public class RFlag {
     /**
      * We're registering that an EC has converted from enemy to friendly.
      */
-    ConvertF;
+    ConvertF,
+    /**
+     * We, a slanderer, are telling our EC that there's a muckraker scaring us
+     * nearby.
+     */
+    ScaryMuk,
+    /**
+     * We found an edge, and enclose its location and, in the aux flag, whether it's
+     * a Y edge.
+     */
+    Edge;
 
     public static Type decode(int header) {
       switch (header) {
@@ -79,6 +89,10 @@ public class RFlag {
         return Type.HelloEC;
       case 4:
         return Type.ConvertF;
+      case 5:
+        return Type.ScaryMuk;
+      case 6:
+        return Type.Edge;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -96,6 +110,10 @@ public class RFlag {
         return 3;
       case ConvertF:
         return 4;
+      case ScaryMuk:
+        return 5;
+      case Edge:
+        return 6;
       }
       throw new RuntimeException("That's not possible");
     }

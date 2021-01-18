@@ -74,7 +74,16 @@ public class EFlag {
      * We're noticing that a spot needs more defenses, and politicians should move
      * there if not otherwise occupied.
      */
-    Reinforcements;
+    Reinforcements,
+    /**
+     * We found an edge, and enclose its location and, in the aux flag, whether it's
+     * a Y edge.
+     */
+    Edge,
+    /**
+     * Another EC called for reinforcements at a location.
+     */
+    Reinforce2;
 
     public static Type decode(int header) {
       switch (header) {
@@ -92,6 +101,10 @@ public class EFlag {
         return Type.ConvertF;
       case 6:
         return Type.Reinforcements;
+      case 7:
+        return Type.Edge;
+      case 8:
+        return Type.Reinforce2;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -113,6 +126,10 @@ public class EFlag {
         return 5;
       case Reinforcements:
         return 6;
+      case Edge:
+        return 7;
+      case Reinforce2:
+        return 8;
       }
       throw new RuntimeException("That's not possible");
     }

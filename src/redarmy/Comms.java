@@ -36,6 +36,7 @@ public class Comms {
     }
   }
 
+  static boolean has_reinforced = false;
   static MapLocation reinforce_loc = null;
   static MapLocation muckraker = null;
 
@@ -58,12 +59,18 @@ public class Comms {
           friendly_ecs.add(flag.id);
         break;
 
+      case Edge:
+        setEdge(flag.aux_flag, flag.loc, ec);
+        break;
+
       case ConvertF:
         enemy_ecs.remove(flag.loc);
         break;
 
       case Reinforcements:
+      case Reinforce2:
         reinforce_loc = flag.loc;
+        has_reinforced = true;
         break;
 
       // As a robot, we know our home EC's location already
@@ -139,6 +146,116 @@ public class Comms {
         muckraker = i.location;
       }
     }
+
+    // Check for edges ourselves
+    int sensor_radius = (int) Math.sqrt(rc.getType().sensorRadiusSquared);
+    MapLocation loc = rc.getLocation();
+    if (minX == null && !rc.onTheMap(loc.translate(-sensor_radius, 0))) {
+      findEdge(loc.translate(-sensor_radius, 0), 1, 0, false);
+    }
+    if (maxX == null && !rc.onTheMap(loc.translate(sensor_radius, 0))) {
+      findEdge(loc.translate(sensor_radius, 0), -1, 0, false);
+    }
+    if (minY == null && !rc.onTheMap(loc.translate(0, -sensor_radius))) {
+      findEdge(loc.translate(0, -sensor_radius), 0, 1, true);
+    }
+    if (maxY == null && !rc.onTheMap(loc.translate(0, sensor_radius))) {
+      findEdge(loc.translate(0, sensor_radius), 0, -1, true);
+    }
+  }
+
+  public static Integer minX = null;
+  public static Integer minY = null;
+  public static Integer maxX = null;
+  public static Integer maxY = null;
+
+  /**
+   * Checks if the location is on the map, returning `true` if unsure. Uses the
+   * edges we've found if possible.
+   */
+  static boolean isOnMap(MapLocation loc) {
+    try {
+      if ((minY != null && loc.y < minY) || (maxY != null && loc.y > maxY) || (minX != null && loc.x < minX)
+          || (maxX != null && loc.x > maxX))
+        return false;
+      if (minY == null || maxY == null || minX == null || maxX == null) {
+        return (!loc.isWithinDistanceSquared(rc.getLocation(), rc.getType().sensorRadiusSquared) || rc.onTheMap(loc));
+      } else {
+        // We know the edges, no need to consult `rc`.
+        return true;
+      }
+    } catch (GameActionException e) {
+      e.printStackTrace();
+      return true;
+    }
+  }
+
+  /**
+   * Processes an edge location that was found or recieved from a teammate. If we
+   * already know about it, does nothing. If not, saves it and queues a message to
+   * tell others about it.
+   */
+  static boolean setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
+    if (is_y) {
+      // It's possible both units are on the edge; if so, we can see which direction
+      // is on the map
+      if (flag_loc.y == unit_loc.y && flag_loc.y == rc.getLocation().y) {
+        MapLocation alt = rc.getLocation().translate(0, 1);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = rc.getLocation().translate(0, -1);
+      }
+
+      // It's possible that unit is *at* the edge, so flag_loc.y = unit_loc.y;
+      // but if so, this unit *isn't* at the edge, so we use that instead.
+      if (flag_loc.y < unit_loc.y || flag_loc.y < rc.getLocation().y) {
+        // If we've already seen this edge, don't relay it further; we don't want
+        // infinite loops.
+        if (minY != null)
+          return false;
+        minY = flag_loc.y;
+      } else {
+        if (maxY != null)
+          return false;
+        maxY = flag_loc.y;
+      }
+    } else {
+      if (flag_loc.x == unit_loc.x && flag_loc.x == rc.getLocation().x) {
+        MapLocation alt = rc.getLocation().translate(1, 0);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = rc.getLocation().translate(-1, 0);
+      }
+
+      if (flag_loc.x < unit_loc.x || flag_loc.x < rc.getLocation().x) {
+        if (minX != null)
+          return false;
+        minX = flag_loc.x;
+      } else {
+        if (maxX != null)
+          return false;
+        maxX = flag_loc.x;
+      }
+    }
+
+    rc.setIndicatorLine(rc.getLocation(), flag_loc, 255, 0, 0);
+    return true;
+  }
+
+  /**
+   * Given a location we know is off the map, moves `(dx, dy)` by `(dx, dy)` until
+   * we get to a location that's on the map, then calls setEdge() on that
+   * location.
+   */
+  static void findEdge(MapLocation start, int dx, int dy, boolean is_y) throws GameActionException {
+    while (!rc.onTheMap(start)) {
+      start = start.translate(dx, dy);
+    }
+    // Go one more to make sure it's not on the edge
+    if (setEdge(is_y, start, start.translate(dx, dy)))
+      queue.add(new RFlag(RFlag.Type.Edge, is_y, start));
   }
 
   static int counter = 0;
@@ -147,6 +264,12 @@ public class Comms {
     // TODO a way for newly converted politicians to be adopted by ECs
     if (ec == null)
       return;
+
+    // If we're a slanderer, tell the EC about nearby muckrakers
+    if (rc.getType() == SLANDERER && muckraker != null) {
+      rc.setFlag(new RFlag(RFlag.Type.ScaryMuk, muckraker).encode(ec, true));
+      return;
+    }
 
     // Make sure to display the flag for enough turns that our home EC sees it
     int nturns = rc.getRobotCount() / 200;

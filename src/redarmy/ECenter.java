@@ -92,8 +92,10 @@ public class ECenter {
       return 0;
     }
     case POLITICIAN: {
-      if (npols > 10 && spend >= 20 && pol_inf_cursor % 2 == 0)
+      if (npols > 10 && spend >= 20 && pol_inf_cursor % 3 == 0)
         return Math.min(spend, 200);
+      else if (spend >= 50 && pol_inf_cursor % 3 < 2)
+        return 50;
       else if (spend >= 25)
         return 25;
       else
@@ -105,9 +107,24 @@ public class ECenter {
     }
   }
 
+  static RobotType nextType() {
+    if (nslans == 0 && !is_muckraker_nearby)
+      return SLANDERER;
+
+    if (nmuks < 3 && rc.getRoundNum() < 12)
+      return MUCKRAKER;
+
+    if (nmuks == 0 && npols > 1 && nslans > 1)
+      return MUCKRAKER;
+
+    if (is_muckraker_nearby || npols * 2 < nslans)
+      return POLITICIAN;
+    else
+      return SLANDERER;
+  }
+
   static void spawn() throws GameActionException {
-    RobotType type = nmuks == 0 && npols > 1 && nslans > 1 ? MUCKRAKER
-        : (is_muckraker_nearby ? POLITICIAN : (npols * 3 < nslans ? POLITICIAN : SLANDERER));
+    RobotType type = nextType();
     Direction dir = openDirection();
     int inf = influenceFor(type);
     if (rc.canBuildRobot(type, dir, inf)) {
@@ -117,6 +134,88 @@ public class ECenter {
       MapLocation l = rc.adjacentLocation(dir);
       addID(rc.senseRobotAtLocation(l).ID);
     }
+  }
+
+  // -- MAP STUFF -- //
+
+  public static Integer minX = null;
+  public static Integer minY = null;
+  public static Integer maxX = null;
+  public static Integer maxY = null;
+
+  /**
+   * Checks if the location is on the map, returning `true` if unsure. Uses the
+   * edges we've found if possible.
+   */
+  static boolean isOnMap(MapLocation loc) {
+    try {
+      if ((minY != null && loc.y < minY) || (maxY != null && loc.y > maxY) || (minX != null && loc.x < minX)
+          || (maxX != null && loc.x > maxX))
+        return false;
+      if (minY == null || maxY == null || minX == null || maxX == null) {
+        return (!loc.isWithinDistanceSquared(rc.getLocation(), rc.getType().sensorRadiusSquared) || rc.onTheMap(loc));
+      } else {
+        // We know the edges, no need to consult `rc`.
+        return true;
+      }
+    } catch (GameActionException e) {
+      e.printStackTrace();
+      return true;
+    }
+  }
+
+  /**
+   * Processes an edge location that was found or recieved from a teammate. If we
+   * already know about it, does nothing. If not, saves it and queues a message to
+   * tell others about it.
+   */
+  static boolean setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
+    if (is_y) {
+      // It's possible both units are on the edge; if so, we can see which direction
+      // is on the map
+      if (flag_loc.y == unit_loc.y && flag_loc.y == rc.getLocation().y) {
+        MapLocation alt = rc.getLocation().translate(0, 1);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = rc.getLocation().translate(0, -1);
+      }
+
+      // It's possible that unit is *at* the edge, so flag_loc.y = unit_loc.y;
+      // but if so, this unit *isn't* at the edge, so we use that instead.
+      if (flag_loc.y < unit_loc.y || flag_loc.y < rc.getLocation().y) {
+        // If we've already seen this edge, don't relay it further; we don't want
+        // infinite loops.
+        if (minY != null)
+          return false;
+        minY = flag_loc.y;
+      } else {
+        if (maxY != null)
+          return false;
+        maxY = flag_loc.y;
+      }
+    } else {
+      if (flag_loc.x == unit_loc.x && flag_loc.x == rc.getLocation().x) {
+        MapLocation alt = rc.getLocation().translate(1, 0);
+        if (isOnMap(alt))
+          unit_loc = alt;
+        else
+          unit_loc = rc.getLocation().translate(-1, 0);
+      }
+
+      if (flag_loc.x < unit_loc.x || flag_loc.x < rc.getLocation().x) {
+        if (minX != null)
+          return false;
+        minX = flag_loc.x;
+      } else {
+        if (maxX != null)
+          return false;
+        maxX = flag_loc.x;
+      }
+    }
+
+    rc.setIndicatorLine(rc.getLocation(), flag_loc, 255, 0, 0);
+    return true;
   }
 
   // -- COMMUNICATION -- //
@@ -187,6 +286,14 @@ public class ECenter {
       if (enemy_ecs.remove(flag.loc))
         if (cvt_pending == null)
           cvt_pending = flag.loc;
+      break;
+    case Edge:
+      setEdge(flag.aux_flag, flag.loc, rc.getLocation());
+      break;
+
+    // If a slanderer is scared, ask for reinforcements
+    case ScaryMuk:
+      reinforce = flag.loc;
       break;
 
     // If it's talking to another EC, ignore it
@@ -263,6 +370,9 @@ public class ECenter {
                 if (cvt_pending == null)
                   cvt_pending = f.loc;
               break;
+            case Edge:
+              setEdge(f.aux_flag, f.loc, ec.loc);
+              break;
             case MyLocationX:
               ec.x = f.id;
               if (ec.y != 0) {
@@ -281,8 +391,10 @@ public class ECenter {
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
               break;
-            // Right now we don't send reinforcements to other ECs - we may later
             case Reinforcements:
+              reinforce2 = f.loc;
+              break;
+            case Reinforce2:
             case None:
               break;
             }
@@ -304,10 +416,12 @@ public class ECenter {
   /**
    * 0: sending x, 1: sending y, 2: done.
    */
-  static int loc_send_stage = 2;
+  static int loc_send_stage = 0;
   static MapLocation cvt_pending = null;
 
   static void addFriendlyEC(int id) {
+    if (id == rc.getID())
+      return;
     for (ECInfo i : friendly_ecs) {
       if (i.id == id)
         return;
@@ -329,12 +443,20 @@ public class ECenter {
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
   static MapLocation reinforce = null;
+  static MapLocation reinforce2 = null;
+  static int edge_cursor = 0;
 
   static EFlag nextFlag() throws GameActionException {
     if (reinforce != null) {
       EFlag flag = new EFlag(EFlag.Type.Reinforcements, reinforce);
       rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
       reinforce = null;
+      reinforce2 = null;
+      return flag;
+    } else if (reinforce2 != null) {
+      EFlag flag = new EFlag(EFlag.Type.Reinforce2, reinforce2);
+      rc.setIndicatorLine(rc.getLocation(), reinforce2, 0, 127, 255);
+      reinforce2 = null;
       return flag;
     }
 
@@ -360,14 +482,29 @@ public class ECenter {
     }
 
     // Otherwise, if we have enemy ECs stored, share those
-    if (enemy_ecs.size() > 0) {
-      if (enemy_ec_cursor >= enemy_ecs.size()) {
-        friendly_ec_cursor = 0;
-        enemy_ec_cursor = 0;
-        loc_send_stage = 0;
-      }
+    if (enemy_ec_cursor < enemy_ecs.size()) {
       MapLocation loc = enemy_ecs.get(enemy_ec_cursor++);
       return new EFlag(EFlag.Type.EnemyEC, loc);
+    }
+
+    // And send edges
+    edge_cursor++;
+    MapLocation loc = rc.getLocation();
+    if (minX != null && edge_cursor <= 1) {
+      return new EFlag(EFlag.Type.Edge, false, new MapLocation(minX, loc.y));
+    } else if (maxX != null && edge_cursor <= 2) {
+      return new EFlag(EFlag.Type.Edge, false, new MapLocation(maxX, loc.y));
+    } else if (minY != null && edge_cursor <= 3) {
+      return new EFlag(EFlag.Type.Edge, true, new MapLocation(loc.x, minY));
+    } else {
+      friendly_ec_cursor = 0;
+      enemy_ec_cursor = 0;
+      loc_send_stage = 0;
+      edge_cursor = 0;
+
+      if (maxY != null) {
+        return new EFlag(EFlag.Type.Edge, true, new MapLocation(loc.x, maxY));
+      }
     }
 
     // Nothing else to send

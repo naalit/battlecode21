@@ -20,7 +20,7 @@ public class Robot {
 
       MapLocation loc = rc.getLocation();
 
-      if (target == null || loc.equals(target)) {
+      if (target == null || loc.equals(target) || !Comms.isOnMap(target)) {
         if (exploring)
           target = retarget();
         else
@@ -78,6 +78,29 @@ public class Robot {
       // This can happen if the turn changes in the middle of moving
       return false;
     }
+  }
+
+  static int retarget_acc;
+
+  static MapLocation retarget() {
+    int width = (Comms.minX != null && Comms.maxX != null) ? Comms.maxX - Comms.minX : 64;
+    int height = (Comms.minY != null && Comms.maxY != null) ? Comms.maxY - Comms.minY : 64;
+    MapLocation min = new MapLocation(Comms.minX != null ? Comms.minX : rc.getLocation().x - width / 2,
+        Comms.minY != null ? Comms.minY : rc.getLocation().y - height / 2);
+
+    return retarget(min, width, height);
+  }
+
+  static MapLocation retarget(MapLocation min, int width, int height) {
+    int wxh = width * height;
+    // This is a RNG technique I found online called Linear Congruential Generator
+    // This should be a random 12 bits
+    retarget_acc = (1231 * retarget_acc + 3171) % wxh;
+    // Split into two, each in 0..N
+    int x = retarget_acc % width;
+    int y = retarget_acc / width;
+    // Now switch to absolute coordinates
+    return min.translate(x, y);
   }
 
   static void circleEC(double dist) {
@@ -272,12 +295,26 @@ public class Robot {
       return;
     }
 
+    // Find the closest enemy EC
+    MapLocation target_ec = null;
+    int ec_dist2 = 1000000;
+    for (MapLocation eec : Comms.enemy_ecs) {
+      int dist2 = eec.distanceSquaredTo(ec != null ? ec : rc.getLocation());
+      if (target_ec == null || dist2 < ec_dist2) {
+        target_ec = eec;
+        ec_dist2 = dist2;
+      }
+    }
+
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
     if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256)) {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);
+    } else if (!Comms.has_reinforced && (muckraker == null || slanderer == null) && ec_dist2 < 256) {
+      target = target_ec;
+      targetMove(false);
     } else if (ec != null && slanderer != null && nfpols < 20 && (nfpols < 8 || rc.getConviction() < 100)) {
       // If there are slanderers nearby, we want to be able to protect them, so stay
       // close. Unless there are too many politicians already here.
@@ -290,16 +327,6 @@ public class Robot {
     } else {
       // If there aren't any slanderers nearby (or we just don't have an EC, which is
       // rare), we explore, targeting enemy ECs if available
-
-      MapLocation target_ec = null;
-      int ec_dist2 = 1000000;
-      for (MapLocation ec : Comms.enemy_ecs) {
-        int dist2 = ec.distanceSquaredTo(rc.getLocation());
-        if (target_ec == null || dist2 < ec_dist2) {
-          target_ec = ec;
-          ec_dist2 = dist2;
-        }
-      }
       if (target_ec != null)
         target = target_ec;
 
@@ -309,7 +336,7 @@ public class Robot {
 
   static void slanTurn() throws GameActionException {
     // Run away from enemy muckrakers
-    if (Comms.muckraker != null ) {
+    if (Comms.muckraker != null) {
       Direction dir = Comms.muckraker.directionTo(rc.getLocation());
       target = rc.adjacentLocation(dir).add(dir);
       targetMove(false);
@@ -345,26 +372,13 @@ public class Robot {
       target = strongest_far.location;
     }
 
+    if (ec != null && ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
+      Direction dir = ec.directionTo(rc.getLocation());
+      target = ec.translate(dir.dx * 10, dir.dy * 10);
+    }
+
     // Wander around constantly
     targetMove(true);
-  }
-
-  static int retarget_acc;
-
-  // Switch to a new random target
-  static MapLocation retarget() {
-    int width = 64;
-    int height = 64;
-    MapLocation min = rc.getLocation().translate(-width / 2, -height / 2);
-    int wxh = width * height;
-    // This is a RNG technique I found online called Linear Congruential Generator
-    // This should be a random 12 bits
-    retarget_acc = (1231 * retarget_acc + 3171) % wxh;
-    // Split into two, each in 0..N
-    int x = retarget_acc % width;
-    int y = retarget_acc / width;
-    // Now switch to absolute coordinates
-    return min.translate(x, y);
   }
 
   static void turn() throws GameActionException {
