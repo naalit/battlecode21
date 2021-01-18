@@ -48,36 +48,43 @@ public class Comms {
     int start_round = rc.getRoundNum();
 
     if (ec_id != null) {
-      EFlag flag = EFlag.decode(ec, rc.getFlag(ec_id));
-      switch (flag.type) {
-      case EnemyEC:
-        if (!enemy_ecs.contains(flag.loc))
-          enemy_ecs.add(flag.loc);
-        break;
-      case FriendlyEC:
-        if (!friendly_ecs.contains(flag.id))
-          friendly_ecs.add(flag.id);
-        break;
+      rc.setIndicatorLine(rc.getLocation(), ec, 128, 128, 0);
+      try {
+        EFlag flag = EFlag.decode(ec, rc.getFlag(ec_id));
+        switch (flag.type) {
+        case EnemyEC:
+          if (!enemy_ecs.contains(flag.loc))
+            enemy_ecs.add(flag.loc);
+          break;
+        case FriendlyEC:
+          if (!friendly_ecs.contains(flag.id))
+            friendly_ecs.add(flag.id);
+          break;
 
-      case Edge:
-        setEdge(flag.aux_flag, flag.loc, ec);
-        break;
+        case Edge:
+          setEdge(flag.aux_flag, flag.loc, ec);
+          break;
 
-      case ConvertF:
-        enemy_ecs.remove(flag.loc);
-        break;
+        case ConvertF:
+          enemy_ecs.remove(flag.loc);
+          break;
 
-      case Reinforcements:
-      case Reinforce2:
-        reinforce_loc = flag.loc;
-        has_reinforced = true;
-        break;
+        case Reinforcements:
+        case Reinforce2:
+          reinforce_loc = flag.loc;
+          has_reinforced = true;
+          break;
 
-      // As a robot, we know our home EC's location already
-      case MyLocationX:
-      case MyLocationY:
-      case None:
-        break;
+        // As a robot, we know our home EC's location already
+        case MyLocationX:
+        case MyLocationY:
+        case None:
+          break;
+        }
+      } catch (GameActionException e) {
+        // Our EC is dead
+        ec = null;
+        ec_id = null;
       }
     }
 
@@ -93,23 +100,24 @@ public class Comms {
         // If it's a friendly EC, it might have been converted and needs to be removed
         // from enemy_ecs and sent to others
         if (i.type == ENLIGHTENMENT_CENTER) {
-          if (ec == null) {
-            ec = iloc;
-            ec_id = i.ID;
-          }
-
           if (!friendly_ecs.contains(i.ID)) {
             friendly_ecs.add(i.ID);
-            if (ec_id != i.ID) {
-              queue.add(new RFlag(RFlag.Type.HelloEC, ec_id));
+            if (ec_id != null && ec_id != i.ID) {
               queue.add(new RFlag(RFlag.Type.FriendlyEC, i.ID));
             }
           }
 
+          if (ec == null) {
+            ec = iloc;
+            ec_id = i.ID;
+          } else if (ec_id != i.ID) {
+            queue.add(new RFlag(RFlag.Type.HelloEC, ec_id));
+            ec = iloc;
+            ec_id = i.ID;
+          }
+
           for (int n = 0; n < enemy_ecs.size(); n++) {
-            // We send it to others if it's new, but also every 20 rounds in case others
-            // didn't hear
-            if (enemy_ecs.get(n).equals(iloc) || (id + start_round) % 20 == 0) {
+            if (enemy_ecs.get(n).equals(iloc)) {
               enemy_ecs.remove(n);
               queue.add(new RFlag(RFlag.Type.ConvertF, iloc));
               break;
@@ -143,7 +151,8 @@ public class Comms {
           queue.add(new RFlag(RFlag.Type.EnemyEC, iloc));
         }
       } else if (i.type == MUCKRAKER) {
-        muckraker = i.location;
+        if (muckraker == null || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
+          muckraker = i.location;
       }
     }
 
@@ -266,8 +275,9 @@ public class Comms {
       return;
 
     // If we're a slanderer, tell the EC about nearby muckrakers
-    if (rc.getType() == SLANDERER && muckraker != null) {
+    if (muckraker != null && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
       rc.setFlag(new RFlag(RFlag.Type.ScaryMuk, muckraker).encode(ec, true));
+      rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
     }
 
@@ -284,7 +294,7 @@ public class Comms {
 
       switch (next.type) {
       case None:
-      case HelloEC:
+      case ScaryMuk:
         break;
       default:
         counter = 0;

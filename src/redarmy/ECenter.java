@@ -272,7 +272,7 @@ public class ECenter {
     }
   }
 
-  static void processFlag(int iflag) {
+  static boolean processFlag(int iflag) {
     RFlag flag = RFlag.decode(rc.getLocation(), iflag);
 
     switch (flag.type) {
@@ -293,14 +293,17 @@ public class ECenter {
 
     // If a slanderer is scared, ask for reinforcements
     case ScaryMuk:
-      reinforce = flag.loc;
+      if ((reinforce == null || flag.loc.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
+        reinforce = flag.loc;
       break;
 
     // If it's talking to another EC, ignore it
     case HelloEC:
+      return flag.id != rc.getID();
     case None:
       break;
     }
+    return true;
   }
 
   static int left_off = 0;
@@ -323,7 +326,10 @@ public class ECenter {
         try {
           int flag = rc.getFlag(id);
           if ((flag & RFlag.HEADER_MASK) != 0) {
-            processFlag(flag);
+            if (!processFlag(flag)) {
+              nempty++;
+              ids[i] = 0;
+            }
           }
         } catch (GameActionException e) {
           // The unit is dead, so add that
@@ -392,7 +398,9 @@ public class ECenter {
               }
               break;
             case Reinforcements:
-              reinforce2 = f.loc;
+              if (!is_enemy_nearby && (reinforce2 == null
+                  || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation()))))
+                reinforce2 = f.loc;
               break;
             case Reinforce2:
             case None:
@@ -516,9 +524,6 @@ public class ECenter {
   }
 
   static void update() throws GameActionException {
-    updateECFlags();
-    updateDistantFlags();
-
     nearby = rc.senseNearbyRobots();
 
     is_enemy_nearby = false;
@@ -535,7 +540,7 @@ public class ECenter {
       if (i.team != team) {
         is_enemy_nearby = true;
 
-        if (i.type == MUCKRAKER)
+        if (i.type == MUCKRAKER && (reinforce == null || i.location.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
           reinforce = i.location;
 
         if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
@@ -548,6 +553,7 @@ public class ECenter {
         case HelloEC:
           RFlag f = RFlag.decode(null, flag);
           addFriendlyEC(f.id);
+          addID(i.ID);
           break;
         default:
           break;
@@ -562,6 +568,9 @@ public class ECenter {
           nmuks++;
       }
     }
+
+    updateECFlags();
+    updateDistantFlags();
 
     showFlag();
   }
