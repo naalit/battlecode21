@@ -92,9 +92,9 @@ public class ECenter {
       return 0;
     }
     case POLITICIAN: {
-      if (npols > 10 && spend >= 20 && pol_inf_cursor % 3 == 0)
-        return Math.min(spend, 200);
-      else if (spend >= 50 && pol_inf_cursor % 3 < 2)
+      if (npols > 10 && spend >= 20 && pol_inf_cursor % 4 < 2)
+        return Math.min(spend, 400);
+      else if (spend >= 50 && pol_inf_cursor % 4 < 3)
         return 50;
       else if (spend >= 25)
         return 25;

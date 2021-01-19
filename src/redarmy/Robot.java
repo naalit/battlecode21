@@ -301,7 +301,7 @@ public class Robot {
     } else if (!Comms.has_reinforced && (muckraker == null || slanderer == null) && ec_dist2 < 512 && rc.getConviction() > 25) {
       target = target_ec;
       targetMove(false);
-    } else if (Comms.ec != null && slanderer != null && nfpols < 20 && (nfpols < 8 || rc.getConviction() < 100)) {
+    } else if (Comms.ec != null && slanderer != null && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
       // System.out.println("has_reinforced = " + Comms.has_reinforced + ", muckraker = " + muckraker + ", slanderer = " + slanderer + ", ec_dist2 = " + ec_dist2);
       // If there are slanderers nearby, we want to be able to protect them, so stay
       // close. Unless there are too many politicians already here.
@@ -311,7 +311,7 @@ public class Robot {
       double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
       // Offset by 2.7 to make sure it rounds right
       circleEC(r + 2.7);
-    } else if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 100)) {
+    } else if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 100) && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
       circleEC(4);
     } else {
       // If there aren't any slanderers nearby (or we just don't have an EC, which is

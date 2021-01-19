@@ -268,6 +268,7 @@ public class Comms {
   }
 
   static int counter = 0;
+  static boolean scary_muk = false;
 
   public static void finish() throws GameActionException {
     // TODO a way for newly converted politicians to be adopted by ECs
@@ -276,9 +277,15 @@ public class Comms {
 
     // If we're a slanderer, tell the EC about nearby muckrakers
     if (muckraker != null && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
+      scary_muk = true;
       rc.setFlag(new RFlag(RFlag.Type.ScaryMuk, muckraker).encode(ec, true));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
+    }
+
+    if (scary_muk) {
+      scary_muk = false;
+      rc.setFlag(new RFlag(RFlag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }
 
     // Make sure to display the flag for enough turns that our home EC sees it
