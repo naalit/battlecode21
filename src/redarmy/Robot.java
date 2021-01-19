@@ -281,10 +281,11 @@ public class Robot {
       return;
     }
 
-    // Find the closest enemy EC
+    // Find the closest neutral EC
+    // TODO: we sometimes want to attack enemy ECs too
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
-    for (MapLocation eec : Comms.enemy_ecs) {
+    for (MapLocation eec : Comms.neutral_ecs) {
       int dist2 = eec.distanceSquaredTo(rc.getLocation());//ec != null ? ec : rc.getLocation());
       if (target_ec == null || dist2 < ec_dist2) {
         target_ec = eec;

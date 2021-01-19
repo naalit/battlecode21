@@ -15,33 +15,42 @@ import battlecode.common.*;
  * if it's a slanderer
  *
  * Alternatively, the aux flag bit + the location bit can be the ID of a unit (probably EC), depending on the flag type.
+ *
+ * For neutral ECs, we also report the influence, using the four bits after the header and the aux flag, and multiplying that number by 25.
  */
-public class RFlag {
+public class Flag {
   public boolean aux_flag = false;
   public MapLocation loc = null;
   public Integer id = null;
   public Type type;
+  public Integer influence = null;
 
-  public RFlag(Type type, int id) {
+  public static Flag neutralEC(MapLocation loc, int influence) {
+    Flag flag = new Flag(Type.NeutralEC, loc);
+    flag.influence = influence;
+    return flag;
+  }
+
+  public Flag(Type type, int id) {
     this.type = type;
     this.id = id;
   }
 
-  public RFlag(Type type) {
+  public Flag(Type type) {
     this.type = type;
   }
 
-  public RFlag(Type type, boolean aux_flag) {
+  public Flag(Type type, boolean aux_flag) {
     this.type = type;
     this.aux_flag = aux_flag;
   }
 
-  public RFlag(Type type, MapLocation loc) {
+  public Flag(Type type, MapLocation loc) {
     this.type = type;
     this.loc = loc;
   }
 
-  public RFlag(Type type, boolean aux_flag, MapLocation loc) {
+  public Flag(Type type, boolean aux_flag, MapLocation loc) {
     this.type = type;
     this.aux_flag = aux_flag;
     this.loc = loc;
@@ -54,45 +63,73 @@ public class RFlag {
      */
     EnemyEC,
     /**
+     * We found a neutral EC, and attach its location and influence.
+     */
+    NeutralEC,
+    /**
      * We found a new friendly EC, and attach its ID.
      */
     FriendlyEC,
     /**
-     * A message meant to be read by a friendly EC in range, attaching this robot's
-     * home EC's ID.
-     */
-    HelloEC,
-    /**
-     * We're registering that an EC has converted from enemy to friendly.
+     * We're registering that an EC has converted from enemy or neutral to friendly,
+     * with location.
      */
     ConvertF,
     /**
-     * We, a slanderer, are telling our EC that there's a muckraker scaring us
-     * nearby.
+     * A message meant to be read by a friendly EC in range, attaching this robot's
+     * home EC's ID. It causes the sending unit to switch home ECs to the one in
+     * range.
      */
-    ScaryMuk,
+    HelloEC,
+    /**
+     * Robot: A robot is telling its home EC that there's a muckraker nearby scaring
+     * a slanderer. EC: We're calling for (politician) reinforcements at a location.
+     */
+    Reinforce,
+    /**
+     * EC: Another EC is calling for reinforcements at a location.
+     */
+    Reinforce2,
     /**
      * We found an edge, and enclose its location and, in the aux flag, whether it's
      * a Y edge.
      */
-    Edge;
+    Edge,
+    /**
+     * EC: Sending the X coordinate of our location as an absolute number in the ID
+     * slot.
+     */
+    MyLocationX,
+    /**
+     * EC: Sending the Y coordinate of our location as an absolute number in the ID
+     * slot.
+     */
+    MyLocationY;
 
     public static Type decode(int header) {
       switch (header) {
       case 0:
-        return Type.None;
+        return None;
       case 1:
-        return Type.EnemyEC;
+        return EnemyEC;
       case 2:
-        return Type.FriendlyEC;
+        return NeutralEC;
       case 3:
-        return Type.HelloEC;
+        return FriendlyEC;
       case 4:
-        return Type.ConvertF;
+        return ConvertF;
       case 5:
-        return Type.ScaryMuk;
+        return HelloEC;
       case 6:
-        return Type.Edge;
+        return Reinforce;
+      case 7:
+        return Reinforce2;
+      case 8:
+        return Edge;
+      case 9:
+        return MyLocationX;
+      case 10:
+        return MyLocationY;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -104,22 +141,38 @@ public class RFlag {
         return 0;
       case EnemyEC:
         return 1;
-      case FriendlyEC:
+      case NeutralEC:
         return 2;
-      case HelloEC:
+      case FriendlyEC:
         return 3;
       case ConvertF:
         return 4;
-      case ScaryMuk:
+      case HelloEC:
         return 5;
-      case Edge:
+      case Reinforce:
         return 6;
+      case Reinforce2:
+        return 7;
+      case Edge:
+        return 8;
+      case MyLocationX:
+        return 9;
+      case MyLocationY:
+        return 10;
       }
       throw new RuntimeException("That's not possible");
     }
 
     public boolean hasID() {
-      return this == Type.FriendlyEC || this == Type.HelloEC;
+      switch (this) {
+      case FriendlyEC:
+      case HelloEC:
+      case MyLocationX:
+      case MyLocationY:
+        return true;
+      default:
+        return false;
+      }
     }
   }
 
@@ -157,7 +210,7 @@ public class RFlag {
     return Type.decode((flag >> (FLAG_SIZE - TYPE_BITS - 1)) & 0b1111);
   }
 
-  public static RFlag decode(MapLocation home_ec, int flag) {
+  public static Flag decode(MapLocation home_ec, int flag) {
     // First, decrypt the flag
     flag ^= FLAG_XOR_KEY;
 
@@ -168,11 +221,16 @@ public class RFlag {
     Type type = Type.decode(sig);
 
     if (type == Type.None)
-      return new RFlag(type);
+      return new Flag(type);
     else if (type.hasID()) {
       int id = flag & ID_MASK;
-      return new RFlag(type, id);
+      return new Flag(type, id);
     }
+
+    // At this point, we know it has a location, so if our reference point is null
+    // we won't be able to decode it
+    if (home_ec == null)
+      return null;
 
     boolean aux_flag = (flag & (1 << AUX_FLAG_SHIFT)) != 0;
 
@@ -190,7 +248,13 @@ public class RFlag {
     // And switch back to absolute coordinates
     MapLocation loc = home_ec.translate(x, y);
 
-    return new RFlag(type, aux_flag, loc);
+    if (type == Type.NeutralEC) {
+      int influence = (flag >> AUX_FLAG_SHIFT) & 0b11111;
+      influence *= 25;
+      return neutralEC(loc, influence);
+    }
+
+    return new Flag(type, aux_flag, loc);
   }
 
   public int encode(MapLocation home_ec, boolean is_slanderer) {
@@ -199,7 +263,11 @@ public class RFlag {
     int sig = type.encode();
     flag |= sig << (FLAG_SIZE - TYPE_BITS - 1);
 
-    flag |= (aux_flag ? 1 : 0) << AUX_FLAG_SHIFT;
+    if (type == Type.NeutralEC) {
+      flag |= (influence / 25) << AUX_FLAG_SHIFT;
+    } else {
+      flag |= (aux_flag ? 1 : 0) << AUX_FLAG_SHIFT;
+    }
 
     if (loc != null) {
       // Switch to relative coordinates (-63..63)

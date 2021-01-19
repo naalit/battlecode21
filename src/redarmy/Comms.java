@@ -6,8 +6,9 @@ import battlecode.common.*;
 import static battlecode.common.RobotType.*;
 
 public class Comms {
-  static ArrayDeque<RFlag> queue = new ArrayDeque<>();
+  static ArrayDeque<Flag> queue = new ArrayDeque<>();
   public static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
+  public static ArrayList<MapLocation> neutral_ecs = new ArrayList<>(8);
   public static ArrayList<Integer> friendly_ecs = new ArrayList<>(8);
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
   /**
@@ -30,7 +31,7 @@ public class Comms {
     team = rc.getTeam();
     try {
       if (rc.getType() == SLANDERER)
-        rc.setFlag(new RFlag(RFlag.Type.None).encode(rc.getLocation(), true));
+        rc.setFlag(new Flag(Flag.Type.None).encode(rc.getLocation(), true));
     } catch (GameActionException e) {
       e.printStackTrace();
     }
@@ -50,11 +51,16 @@ public class Comms {
     if (ec_id != null) {
       rc.setIndicatorLine(rc.getLocation(), ec, 128, 128, 0);
       try {
-        EFlag flag = EFlag.decode(ec, rc.getFlag(ec_id));
+        Flag flag = Flag.decode(ec, rc.getFlag(ec_id));
         switch (flag.type) {
         case EnemyEC:
+          neutral_ecs.remove(flag.loc);
           if (!enemy_ecs.contains(flag.loc))
             enemy_ecs.add(flag.loc);
+          break;
+        case NeutralEC:
+          if (!neutral_ecs.contains(flag.loc))
+            neutral_ecs.add(flag.loc);
           break;
         case FriendlyEC:
           if (!friendly_ecs.contains(flag.id))
@@ -69,7 +75,7 @@ public class Comms {
           enemy_ecs.remove(flag.loc);
           break;
 
-        case Reinforcements:
+        case Reinforce:
         case Reinforce2:
           reinforce_loc = flag.loc;
           has_reinforced = true;
@@ -78,6 +84,7 @@ public class Comms {
         // As a robot, we know our home EC's location already
         case MyLocationX:
         case MyLocationY:
+        case HelloEC:
         case None:
           break;
         }
@@ -103,7 +110,7 @@ public class Comms {
           if (!friendly_ecs.contains(i.ID)) {
             friendly_ecs.add(i.ID);
             if (ec_id != null && ec_id != i.ID) {
-              queue.add(new RFlag(RFlag.Type.FriendlyEC, i.ID));
+              queue.add(new Flag(Flag.Type.FriendlyEC, i.ID));
             }
           }
 
@@ -111,17 +118,13 @@ public class Comms {
             ec = iloc;
             ec_id = i.ID;
           } else if (ec_id != i.ID) {
-            queue.add(new RFlag(RFlag.Type.HelloEC, ec_id));
+            queue.add(new Flag(Flag.Type.HelloEC, ec_id));
             ec = iloc;
             ec_id = i.ID;
           }
 
-          for (int n = 0; n < enemy_ecs.size(); n++) {
-            if (enemy_ecs.get(n).equals(iloc)) {
-              enemy_ecs.remove(n);
-              queue.add(new RFlag(RFlag.Type.ConvertF, iloc));
-              break;
-            }
+          if (enemy_ecs.remove(iloc) || neutral_ecs.remove(iloc)) {
+            queue.add(new Flag(Flag.Type.ConvertF, iloc));
           }
         }
 
@@ -130,28 +133,29 @@ public class Comms {
         if (rc.getRoundNum() != start_round || Clock.getBytecodesLeft() < 1000)
           break;
 
-        if (RFlag.isSlanderer(rc.getFlag(i.ID))) {
+        if (Flag.isSlanderer(rc.getFlag(i.ID))) {
           friendly_slanderers.add(i);
           total_fslan_conv += i.conviction;
         }
 
       } else if (i.type == ENLIGHTENMENT_CENTER) {
-        // It's an enemy EC, we need to add it to enemy_ecs and tell others about it if
-        // it's new
-        boolean is_new = true;
-        for (MapLocation l : enemy_ecs) {
-          if (iloc.equals(l)) {
-            is_new = false;
-            break;
+        if (i.team == team.opponent()) {
+          // It's an enemy EC
+          neutral_ecs.remove(i.location);
+          if (!enemy_ecs.contains(i.location)) {
+            enemy_ecs.add(iloc);
+            queue.add(new Flag(Flag.Type.EnemyEC, iloc));
+          }
+        } else {
+          // It's a neutral EC
+          if (!neutral_ecs.contains(i.location)) {
+            neutral_ecs.add(i.location);
+            queue.add(Flag.neutralEC(i.location, i.influence));
           }
         }
-        // We send it to others if it's new
-        if (is_new) {
-          enemy_ecs.add(iloc);
-          queue.add(new RFlag(RFlag.Type.EnemyEC, iloc));
-        }
       } else if (i.type == MUCKRAKER) {
-        if (muckraker == null || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
+        if (muckraker == null
+            || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
           muckraker = i.location;
       }
     }
@@ -264,7 +268,7 @@ public class Comms {
     }
     // Go one more to make sure it's not on the edge
     if (setEdge(is_y, start, start.translate(dx, dy)))
-      queue.add(new RFlag(RFlag.Type.Edge, is_y, start));
+      queue.add(new Flag(Flag.Type.Edge, is_y, start));
   }
 
   static int counter = 0;
@@ -278,14 +282,14 @@ public class Comms {
     // If we're a slanderer, tell the EC about nearby muckrakers
     if (muckraker != null && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
       scary_muk = true;
-      rc.setFlag(new RFlag(RFlag.Type.ScaryMuk, muckraker).encode(ec, true));
+      rc.setFlag(new Flag(Flag.Type.Reinforce, muckraker).encode(ec, true));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
     }
 
     if (scary_muk) {
       scary_muk = false;
-      rc.setFlag(new RFlag(RFlag.Type.None).encode(ec, rc.getType() == SLANDERER));
+      rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }
 
     // Make sure to display the flag for enough turns that our home EC sees it
@@ -296,18 +300,18 @@ public class Comms {
     }
 
     if (!queue.isEmpty()) {
-      RFlag next = queue.remove();
+      Flag next = queue.remove();
       rc.setFlag(next.encode(ec, rc.getType() == SLANDERER));
 
       switch (next.type) {
       case None:
-      case ScaryMuk:
+      case Reinforce:
         break;
       default:
         counter = 0;
       }
     } else {
-      rc.setFlag(new RFlag(RFlag.Type.None).encode(ec, rc.getType() == SLANDERER));
+      rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }
   }
 }

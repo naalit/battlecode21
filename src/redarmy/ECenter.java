@@ -92,6 +92,21 @@ public class ECenter {
       return 0;
     }
     case POLITICIAN: {
+      NeutralEC closest = null;
+      int closest_d = 100000;
+      for (NeutralEC e : neutral_ecs) {
+        if (e.loc.isWithinDistanceSquared(rc.getLocation(), closest_d)) {
+          closest = e;
+          closest_d = e.loc.distanceSquaredTo(rc.getLocation());
+        }
+      }
+      // Spawn a pol designed to take out this neutral EC, with >=1.5x EC inf
+      // TODO: tell it to target that EC
+      // spend >= inf * 3/2 ==> spend * 2 >= inf * 3
+      if (closest != null && spend * 2 >= closest.influence * 3) {
+        return spend;
+      }
+
       if (npols > 10 && spend >= 20 && pol_inf_cursor % 4 < 2)
         return Math.min(spend, 400);
       else if (spend >= 50 && pol_inf_cursor % 4 < 3)
@@ -272,12 +287,18 @@ public class ECenter {
     }
   }
 
+  /**
+   * Returns whether to keep the unit sending the flag
+   */
   static boolean processFlag(int iflag) {
-    RFlag flag = RFlag.decode(rc.getLocation(), iflag);
+    Flag flag = Flag.decode(rc.getLocation(), iflag);
 
     switch (flag.type) {
     case FriendlyEC:
       addFriendlyEC(flag.id);
+      break;
+    case NeutralEC:
+      addNeutralEC(flag.loc, flag.influence);
       break;
     case EnemyEC:
       addEnemyEC(flag.loc);
@@ -292,14 +313,20 @@ public class ECenter {
       break;
 
     // If a slanderer is scared, ask for reinforcements
-    case ScaryMuk:
-      if ((reinforce == null || flag.loc.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
+    case Reinforce:
+      if ((reinforce == null
+          || flag.loc.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
         reinforce = flag.loc;
       break;
 
-    // If it's talking to another EC, ignore it
+    // Remove the unit if it's saying goodbye to us
     case HelloEC:
       return flag.id != rc.getID();
+
+    // These aren't possible for a robot
+    case Reinforce2:
+    case MyLocationX:
+    case MyLocationY:
     case None:
       break;
     }
@@ -325,7 +352,7 @@ public class ECenter {
       if (id != 0) {
         try {
           int flag = rc.getFlag(id);
-          if ((flag & RFlag.HEADER_MASK) != 0) {
+          if ((flag & Flag.HEADER_MASK) != 0) {
             if (!processFlag(flag)) {
               nempty++;
               ids[i] = 0;
@@ -359,14 +386,17 @@ public class ECenter {
       ECInfo ec = friendly_ecs.get(i);
       try {
         int flag = rc.getFlag(ec.id);
-        if ((flag & EFlag.HEADER_MASK) != 0) {
-          EFlag f = EFlag.decode(ec.loc, flag);
+        if ((flag & Flag.HEADER_MASK) != 0) {
+          Flag f = Flag.decode(ec.loc, flag);
           // f will be null if we needed the location of the EC but haven't got it yet
           if (f != null) {
 
             switch (f.type) {
             case FriendlyEC:
               addFriendlyEC(f.id);
+              break;
+            case NeutralEC:
+              addNeutralEC(f.loc, f.influence);
               break;
             case EnemyEC:
               addEnemyEC(f.loc);
@@ -397,12 +427,13 @@ public class ECenter {
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
               break;
-            case Reinforcements:
+            case Reinforce:
               if (!is_enemy_nearby && (reinforce2 == null
                   || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation()))))
                 reinforce2 = f.loc;
               break;
             case Reinforce2:
+            case HelloEC:
             case None:
               break;
             }
@@ -441,11 +472,36 @@ public class ECenter {
 
   static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
 
+  static class NeutralEC {
+    int influence;
+    MapLocation loc;
+
+    NeutralEC(MapLocation loc, int influence) {
+      this.loc = loc;
+      this.influence = influence;
+    }
+  }
+
+  static ArrayList<NeutralEC> neutral_ecs = new ArrayList<>(8);
+
   static void addEnemyEC(MapLocation loc) {
     if (!enemy_ecs.contains(loc)) {
       enemy_ecs.add(loc);
       rc.setIndicatorLine(rc.getLocation(), loc, 0, 0, 0);
     }
+  }
+
+  static void addNeutralEC(MapLocation loc, int influence) {
+    for (NeutralEC ec : neutral_ecs) {
+      // If it's already there, update to the latest influence value
+      if (ec.loc.equals(loc)) {
+        ec.influence = influence;
+        rc.setIndicatorLine(rc.getLocation(), loc, 255, 127, 127);
+        return;
+      }
+    }
+    neutral_ecs.add(new NeutralEC(loc, influence));
+    rc.setIndicatorLine(rc.getLocation(), loc, 127, 127, 127);
   }
 
   static int enemy_ec_cursor = 0;
@@ -454,22 +510,22 @@ public class ECenter {
   static MapLocation reinforce2 = null;
   static int edge_cursor = 0;
 
-  static EFlag nextFlag() throws GameActionException {
+  static Flag nextFlag() throws GameActionException {
     if (reinforce != null) {
-      EFlag flag = new EFlag(EFlag.Type.Reinforcements, reinforce);
+      Flag flag = new Flag(Flag.Type.Reinforce, reinforce);
       rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
       reinforce = null;
       reinforce2 = null;
       return flag;
     } else if (reinforce2 != null) {
-      EFlag flag = new EFlag(EFlag.Type.Reinforce2, reinforce2);
+      Flag flag = new Flag(Flag.Type.Reinforce2, reinforce2);
       rc.setIndicatorLine(rc.getLocation(), reinforce2, 0, 127, 255);
       reinforce2 = null;
       return flag;
     }
 
     if (cvt_pending != null) {
-      EFlag flag = new EFlag(EFlag.Type.ConvertF, cvt_pending);
+      Flag flag = new Flag(Flag.Type.ConvertF, cvt_pending);
       cvt_pending = null;
       return flag;
     }
@@ -478,32 +534,32 @@ public class ECenter {
     if (loc_send_stage < 2) {
       loc_send_stage++;
       if (loc_send_stage == 1)
-        return new EFlag(EFlag.Type.MyLocationX, rc.getLocation().x);
+        return new Flag(Flag.Type.MyLocationX, rc.getLocation().x);
       else if (loc_send_stage == 2)
-        return new EFlag(EFlag.Type.MyLocationY, rc.getLocation().y);
+        return new Flag(Flag.Type.MyLocationY, rc.getLocation().y);
     }
 
     // Then share friendly ECs
     if (friendly_ec_cursor < friendly_ecs.size()) {
       ECInfo ec = friendly_ecs.get(friendly_ec_cursor++);
-      return new EFlag(EFlag.Type.FriendlyEC, ec.id);
+      return new Flag(Flag.Type.FriendlyEC, ec.id);
     }
 
     // Otherwise, if we have enemy ECs stored, share those
     if (enemy_ec_cursor < enemy_ecs.size()) {
       MapLocation loc = enemy_ecs.get(enemy_ec_cursor++);
-      return new EFlag(EFlag.Type.EnemyEC, loc);
+      return new Flag(Flag.Type.EnemyEC, loc);
     }
 
     // And send edges
     edge_cursor++;
     MapLocation loc = rc.getLocation();
     if (minX != null && edge_cursor <= 1) {
-      return new EFlag(EFlag.Type.Edge, false, new MapLocation(minX, loc.y));
+      return new Flag(Flag.Type.Edge, false, new MapLocation(minX, loc.y));
     } else if (maxX != null && edge_cursor <= 2) {
-      return new EFlag(EFlag.Type.Edge, false, new MapLocation(maxX, loc.y));
+      return new Flag(Flag.Type.Edge, false, new MapLocation(maxX, loc.y));
     } else if (minY != null && edge_cursor <= 3) {
-      return new EFlag(EFlag.Type.Edge, true, new MapLocation(loc.x, minY));
+      return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, minY));
     } else {
       friendly_ec_cursor = 0;
       enemy_ec_cursor = 0;
@@ -511,16 +567,16 @@ public class ECenter {
       edge_cursor = 0;
 
       if (maxY != null) {
-        return new EFlag(EFlag.Type.Edge, true, new MapLocation(loc.x, maxY));
+        return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, maxY));
       }
     }
 
     // Nothing else to send
-    return new EFlag(EFlag.Type.None);
+    return new Flag(Flag.Type.None);
   }
 
   static void showFlag() throws GameActionException {
-    rc.setFlag(nextFlag().encode(rc.getLocation()));
+    rc.setFlag(nextFlag().encode(rc.getLocation(), false));
   }
 
   static void update() throws GameActionException {
@@ -540,7 +596,8 @@ public class ECenter {
       if (i.team != team) {
         is_enemy_nearby = true;
 
-        if (i.type == MUCKRAKER && (reinforce == null || i.location.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
+        if (i.type == MUCKRAKER && (reinforce == null
+            || i.location.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
           reinforce = i.location;
 
         if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
@@ -549,9 +606,9 @@ public class ECenter {
       } else {
         // Read the flag; we only care if it's HelloEC, otherwise we'll see it anyway
         int flag = rc.getFlag(i.ID);
-        switch (RFlag.getType(flag)) {
+        switch (Flag.getType(flag)) {
         case HelloEC:
-          RFlag f = RFlag.decode(null, flag);
+          Flag f = Flag.decode(null, flag);
           addFriendlyEC(f.id);
           addID(i.ID);
           break;
