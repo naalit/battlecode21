@@ -42,6 +42,7 @@ public class Comms {
   static boolean has_reinforced = false;
   static MapLocation reinforce_loc = null;
   static MapLocation muckraker = null;
+  static MapLocation cvt_loc = null;
 
   static boolean removeNeutralEC(MapLocation loc) {
     for (int i = 0; i < neutral_ecs.size(); i++) {
@@ -100,7 +101,10 @@ public class Comms {
           break;
 
         case ConvertF:
-          removeNeutralEC(flag.loc);
+          if (removeNeutralEC(flag.loc)) {
+            rc.setIndicatorLine(rc.getLocation(), flag.loc, 255, 0, 255);
+            cvt_loc = flag.loc;
+          }
           enemy_ecs.remove(flag.loc);
           break;
 
@@ -150,10 +154,13 @@ public class Comms {
             queue.add(new Flag(Flag.Type.HelloEC, ec_id));
             pending_ec = iloc;
             pending_id = i.ID;
+            cvt_loc = null;
           }
 
           if (enemy_ecs.remove(iloc) || removeNeutralEC(iloc)) {
-            queue.add(new Flag(Flag.Type.ConvertF, iloc));
+            rc.setIndicatorLine(rc.getLocation(), iloc, 255, 0, 255);
+            cvt_loc = iloc;
+            queue.addFirst(new Flag(Flag.Type.ConvertF, iloc));
           }
         }
 

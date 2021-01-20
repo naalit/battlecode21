@@ -29,7 +29,7 @@ public class ECenter {
     // No reason to bid for votes past a majority
     // Also, if we bid too early our economy gets set up slower, and if we bid when
     // we have low conviction we never spawn slanderers
-    if (last_votes > 750 || rc.getRoundNum() < 50 || rc.getConviction() < 200)
+    if (rc.getTeamVotes() > 750 || rc.getRoundNum() < 50 || rc.getConviction() < 200)
       return;
     // If our votes didn't change, we lost, and need to bid higher.
     boolean lost_last_round = rc.getTeamVotes() == last_votes;
@@ -145,10 +145,10 @@ public class ECenter {
     if (nmuks < 3 && rc.getRoundNum() < 12)
       return MUCKRAKER;
 
-    if (nmuks == 0 && npols > 1 && nslans > 1)
+    if (nmuks < 2 && npols > 1 && nslans > 1)
       return MUCKRAKER;
 
-    if (is_muckraker_nearby || npols * 2 < nslans)
+    if (is_muckraker_nearby || npols * 3 < nslans)
       return POLITICIAN;
     else
       return SLANDERER;
@@ -320,9 +320,9 @@ public class ECenter {
       addEnemyEC(flag.loc);
       break;
     case ConvertF:
-      if (enemy_ecs.remove(flag.loc))
-        if (cvt_pending == null)
-          cvt_pending = flag.loc;
+    if (enemy_ecs.remove(flag.loc) || removeNeutralEC(flag.loc))
+      if (cvt_pending == null)
+        cvt_pending = flag.loc;
       break;
     case Edge:
       setEdge(flag.aux_flag, flag.loc, rc.getLocation());
@@ -418,7 +418,7 @@ public class ECenter {
               addEnemyEC(f.loc);
               break;
             case ConvertF:
-              if (enemy_ecs.remove(f.loc))
+              if (enemy_ecs.remove(f.loc) || removeNeutralEC(f.loc))
                 if (cvt_pending == null)
                   cvt_pending = f.loc;
               break;
@@ -546,6 +546,7 @@ public class ECenter {
     }
 
     if (cvt_pending != null) {
+      rc.setIndicatorLine(rc.getLocation(), cvt_pending, 255, 0, 255);
       Flag flag = new Flag(Flag.Type.ConvertF, cvt_pending);
       cvt_pending = null;
       return flag;
@@ -618,19 +619,16 @@ public class ECenter {
     Team team = rc.getTeam();
     Team enemy = team.opponent();
     MapLocation loc = rc.getLocation();
-    // A muckraker within this squared radius could instantly kill any slanderer we
-    // spawn, so we shouldn't spawn slanderers
-    int radius = 16;
     for (RobotInfo i : nearby) {
       if (i.team == enemy) {
         if (i.type == POLITICIAN)
           total_epol_conv += i.conviction;
 
         if (i.type == MUCKRAKER && (reinforce == null
-            || i.location.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
+            || i.location.isWithinDistanceSquared(loc, reinforce.distanceSquaredTo(rc.getLocation()))))
           reinforce = i.location;
 
-        if (!is_muckraker_nearby && i.type == MUCKRAKER && i.location.isWithinDistanceSquared(loc, radius)) {
+        if (!is_muckraker_nearby && i.type == MUCKRAKER) {
           is_muckraker_nearby = true;
         }
       } else {

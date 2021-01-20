@@ -275,7 +275,7 @@ public class Robot {
     // average,
     // so its life isn't worth much
     int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
-    if ((useful_conv <= 2 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
+    if ((useful_conv * 2 <= 3 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
         && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return;
@@ -334,12 +334,11 @@ public class Robot {
     } else {
       // If there aren't any slanderers nearby (or we just don't have an EC, which is
       // rare), we explore, targeting enemy ECs if available
-      if (target_ec != null) {
+      if (target_ec != null)
         target = target_ec;
-        targetMove();
-      } else {
-        targetMove(true);
-      }
+      else if (Comms.cvt_loc != null)
+        target = Comms.cvt_loc;
+      targetMove(true);
     }
   }
 
