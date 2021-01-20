@@ -85,7 +85,8 @@ public class ECenter {
     // If there are enemies nearby, we don't want them to take our EC, so the amount
     // we want to keep in the EC is higher.
     int total = rc.getInfluence();
-    int keep = is_enemy_nearby ? Math.min(total / 2, 500) : 40;
+    // Keep enough so that we won't die to all the enemy pols blowing up
+    int keep = Math.max(total_epol_conv + 1, 40);
     int spend = total - keep;
 
     switch (type) {
@@ -251,7 +252,7 @@ public class ECenter {
   static int endidx = 0;
 
   static RobotInfo[] nearby;
-  static boolean is_enemy_nearby = false;
+  static int total_epol_conv = 0;
   static boolean is_muckraker_nearby = false;
   static int npols = 0;
   static int nslans = 0;
@@ -438,8 +439,8 @@ public class ECenter {
               }
               break;
             case Reinforce:
-              if (!is_enemy_nearby && (reinforce2 == null
-                  || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation()))))
+              if (reinforce2 == null
+                  || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation())))
                 reinforce2 = f.loc;
               break;
             case Reinforce2:
@@ -601,19 +602,21 @@ public class ECenter {
   static void update() throws GameActionException {
     nearby = rc.senseNearbyRobots();
 
-    is_enemy_nearby = false;
+    total_epol_conv = 0;
     is_muckraker_nearby = false;
     npols = 0;
     nslans = 0;
     nmuks = 0;
     Team team = rc.getTeam();
+    Team enemy = team.opponent();
     MapLocation loc = rc.getLocation();
     // A muckraker within this squared radius could instantly kill any slanderer we
     // spawn, so we shouldn't spawn slanderers
     int radius = 16;
     for (RobotInfo i : nearby) {
-      if (i.team != team) {
-        is_enemy_nearby = true;
+      if (i.team == enemy) {
+        if (i.type == POLITICIAN)
+          total_epol_conv += i.conviction;
 
         if (i.type == MUCKRAKER && (reinforce == null
             || i.location.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
