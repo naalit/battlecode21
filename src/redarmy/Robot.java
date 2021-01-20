@@ -31,9 +31,11 @@ public class Robot {
       Direction dir = loc.directionTo(target);
 
       // Try going around obstacles, first left, then right
-      MapLocation[] options = { loc.add(dir), loc.add(dir.rotateLeft()), loc.add(dir.rotateRight()) };
+      MapLocation[] options = { loc.add(dir), loc.add(dir.rotateLeft()), loc.add(dir.rotateRight()),
+          loc.add(dir.rotateLeft().rotateLeft()), loc.add(dir.rotateRight().rotateRight()) };
       MapLocation best = null;
       double best_pass = -1;
+      int prev_dist2 = loc.distanceSquaredTo(target);
       for (MapLocation i : options) {
         // Don't occupy EC spawning spaces
         if ((Comms.ec != null && i.isWithinDistanceSquared(Comms.ec, 2)) || !rc.canMove(loc.directionTo(i)))
@@ -42,7 +44,7 @@ public class Robot {
         if (i.equals(target)) {
           best = i;
           best_pass = 100;
-        } else if (rc.sensePassability(i) > best_pass) {
+        } else if (rc.sensePassability(i) > best_pass && i.isWithinDistanceSquared(target, prev_dist2 - 1)) {
           best = i;
           best_pass = rc.sensePassability(i);
         }
@@ -308,7 +310,8 @@ public class Robot {
 
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
-    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 400) {
+    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256)
+        && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 400) {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);
@@ -397,11 +400,11 @@ public class Robot {
 
     // Move out of the spawning space we're occupying as soon as possible
     // if (!moved_yet && Comms.ec != null) {
-    //   Direction dir = Comms.ec.directionTo(rc.getLocation());
-    //   target = rc.getLocation().add(dir).add(dir);
-    //   if (targetMove())
-    //     moved_yet = true;
-    //   return;
+    // Direction dir = Comms.ec.directionTo(rc.getLocation());
+    // target = rc.getLocation().add(dir).add(dir);
+    // if (targetMove())
+    // moved_yet = true;
+    // return;
     // }
 
     switch (rc.getType()) {
