@@ -193,13 +193,13 @@ public class Robot {
     // kill the muckraker, and the slanderer has higher influence than we have
     // conviction (which is usually true), then we need to kill the muckraker so it
     // doesn't kill the slanderer.
-    MapLocation mucknext = muckraker == null || slanderer == null ? null : muckraker.location.add(muckraker.location.directionTo(slanderer.location));
+    MapLocation mucknext = muckraker == null || slanderer == null ? null
+        : muckraker.location.add(muckraker.location.directionTo(slanderer.location));
     if (muckraker != null && slanderer != null
     // Either the muckraker is in kill distance now, or will be in after moving once
     // and can move
         && (muckraker.location.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-            || (mucknext
-                .isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+            || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
                 && !rc.isLocationOccupied(mucknext)))
         // We're in kill distance of the muckraker now (radii[3] is the maximum radius
         // for empowering)
@@ -285,25 +285,31 @@ public class Robot {
     // TODO: we sometimes want to attack enemy ECs too
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
-    for (MapLocation eec : Comms.neutral_ecs) {
-      int dist2 = eec.distanceSquaredTo(rc.getLocation());//ec != null ? ec : rc.getLocation());
+    for (NeutralEC eec : Comms.neutral_ecs) {
+      if (eec.influence >= rc.getConviction() - 10)
+        continue;
+      int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
       if (target_ec == null || dist2 < ec_dist2) {
-        target_ec = eec;
+        target_ec = eec.loc;
         ec_dist2 = dist2;
       }
     }
 
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
-    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && nfpols < 10 && (nfpols < 5 || rc.getConviction() < 100)) {
+    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && nfpols < 10
+        && (nfpols < 5 || rc.getConviction() < 100)) {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);
-    } else if (!Comms.has_reinforced && (muckraker == null || slanderer == null) && ec_dist2 < 512 && rc.getConviction() > 25) {
+    } else if (!Comms.has_reinforced && (muckraker == null || slanderer == null) && ec_dist2 < 512
+        && rc.getConviction() > 25) {
       target = target_ec;
-      targetMove(false);
-    } else if (Comms.ec != null && slanderer != null && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
-      // System.out.println("has_reinforced = " + Comms.has_reinforced + ", muckraker = " + muckraker + ", slanderer = " + slanderer + ", ec_dist2 = " + ec_dist2);
+      targetMove();
+    } else if (Comms.ec != null && slanderer != null && (nfpols < 20 || rc.getConviction() <= 25)
+        && (nfpols < 8 || rc.getConviction() < 100)) {
+      // System.out.println("has_reinforced = " + Comms.has_reinforced + ", muckraker
+      // = " + muckraker + ", slanderer = " + slanderer + ", ec_dist2 = " + ec_dist2);
       // If there are slanderers nearby, we want to be able to protect them, so stay
       // close. Unless there are too many politicians already here.
       // We want to be about 2 units away.
@@ -312,25 +318,30 @@ public class Robot {
       double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
       // Offset by 2.7 to make sure it rounds right
       circleEC(r + 2.7);
-    } else if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 100) && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
+    } else if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 100)
+        && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
       circleEC(4);
     } else {
       // If there aren't any slanderers nearby (or we just don't have an EC, which is
       // rare), we explore, targeting enemy ECs if available
-      if (target_ec != null)
+      if (target_ec != null) {
         target = target_ec;
-
-      targetMove(true);
+        targetMove();
+      } else {
+        targetMove(true);
+      }
     }
   }
 
   static void slanTurn() throws GameActionException {
     // Run away from enemy muckrakers
-    if (Comms.muckraker != null || (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 49))) {
+    if (Comms.muckraker != null
+        || (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 100))) {
       MapLocation run_from = Comms.muckraker != null ? Comms.muckraker : Comms.reinforce_loc;
       Direction dir = run_from.directionTo(rc.getLocation());
       target = rc.adjacentLocation(dir).add(dir);
       targetMove(false);
+      Comms.reinforce_loc = null;
     } else if (Comms.ec != null) {
       // Slanderers circle the EC, if they have one
       circleEC(3);
@@ -363,9 +374,9 @@ public class Robot {
       target = strongest_far.location;
     }
 
-    if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
+    if (target == null && Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
       Direction dir = Comms.ec.directionTo(rc.getLocation());
-      target = Comms.ec.translate(dir.dx * 20, dir.dy * 20);
+      target = Comms.ec.translate(dir.dx * 100, dir.dy * 100);
     }
 
     // Wander around constantly
@@ -376,13 +387,13 @@ public class Robot {
     Comms.update();
 
     // Move out of the spawning space we're occupying as soon as possible
-    if (!moved_yet && Comms.ec != null) {
-      Direction dir = Comms.ec.directionTo(rc.getLocation());
-      target = rc.getLocation().add(dir).add(dir);
-      if (targetMove())
-        moved_yet = true;
-      return;
-    }
+    // if (!moved_yet && Comms.ec != null) {
+    //   Direction dir = Comms.ec.directionTo(rc.getLocation());
+    //   target = rc.getLocation().add(dir).add(dir);
+    //   if (targetMove())
+    //     moved_yet = true;
+    //   return;
+    // }
 
     switch (rc.getType()) {
     case SLANDERER:

@@ -7,6 +7,16 @@ import battlecode.common.*;
 import static battlecode.common.RobotType.*;
 import static battlecode.common.Direction.*;
 
+class NeutralEC {
+  int influence;
+  MapLocation loc;
+
+  NeutralEC(MapLocation loc, int influence) {
+    this.loc = loc;
+    this.influence = influence;
+  }
+}
+
 public class ECenter {
   static RobotController rc;
 
@@ -413,7 +423,7 @@ public class ECenter {
               ec.x = f.id;
               if (ec.y != 0) {
                 ec.loc = new MapLocation(ec.x, ec.y);
-                if (enemy_ecs.remove(ec.loc))
+                if (enemy_ecs.remove(ec.loc) || removeNeutralEC(ec.loc))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
@@ -422,7 +432,7 @@ public class ECenter {
               ec.y = f.id;
               if (ec.x != 0) {
                 ec.loc = new MapLocation(ec.x, ec.y);
-                if (enemy_ecs.remove(ec.loc))
+                if (enemy_ecs.remove(ec.loc) || removeNeutralEC(ec.loc))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
@@ -472,16 +482,6 @@ public class ECenter {
 
   static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
 
-  static class NeutralEC {
-    int influence;
-    MapLocation loc;
-
-    NeutralEC(MapLocation loc, int influence) {
-      this.loc = loc;
-      this.influence = influence;
-    }
-  }
-
   static ArrayList<NeutralEC> neutral_ecs = new ArrayList<>(8);
 
   static void addEnemyEC(MapLocation loc) {
@@ -500,12 +500,24 @@ public class ECenter {
         return;
       }
     }
+    System.out.println("Found neutral EC at " + loc + ", inf = " + influence);
     neutral_ecs.add(new NeutralEC(loc, influence));
     rc.setIndicatorLine(rc.getLocation(), loc, 127, 127, 127);
   }
 
+  static boolean removeNeutralEC(MapLocation loc) {
+    for (int i = 0; i < neutral_ecs.size(); i++) {
+      if (neutral_ecs.get(i).loc.equals(loc)) {
+        neutral_ecs.remove(i);
+        return true;
+      }
+    }
+    return false;
+  }
+
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
+  static int neutral_ec_cursor = 0;
   static MapLocation reinforce = null;
   static MapLocation reinforce2 = null;
   static int edge_cursor = 0;
@@ -546,6 +558,12 @@ public class ECenter {
     }
 
     // Otherwise, if we have enemy ECs stored, share those
+    if (neutral_ec_cursor < neutral_ecs.size()) {
+      NeutralEC ec = neutral_ecs.get(neutral_ec_cursor++);
+      return Flag.neutralEC(ec.loc, ec.influence);
+    }
+
+    // Otherwise, if we have enemy ECs stored, share those
     if (enemy_ec_cursor < enemy_ecs.size()) {
       MapLocation loc = enemy_ecs.get(enemy_ec_cursor++);
       return new Flag(Flag.Type.EnemyEC, loc);
@@ -562,6 +580,7 @@ public class ECenter {
       return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, minY));
     } else {
       friendly_ec_cursor = 0;
+      neutral_ec_cursor = 0;
       enemy_ec_cursor = 0;
       loc_send_stage = 0;
       edge_cursor = 0;

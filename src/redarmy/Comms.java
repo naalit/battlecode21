@@ -8,7 +8,7 @@ import static battlecode.common.RobotType.*;
 public class Comms {
   static ArrayDeque<Flag> queue = new ArrayDeque<>();
   public static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
-  public static ArrayList<MapLocation> neutral_ecs = new ArrayList<>(8);
+  public static ArrayList<NeutralEC> neutral_ecs = new ArrayList<>(8);
   public static ArrayList<Integer> friendly_ecs = new ArrayList<>(8);
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
   /**
@@ -41,6 +41,33 @@ public class Comms {
   static MapLocation reinforce_loc = null;
   static MapLocation muckraker = null;
 
+  static boolean removeNeutralEC(MapLocation loc) {
+    for (int i = 0; i < neutral_ecs.size(); i++) {
+      if (neutral_ecs.get(i).loc.equals(loc)) {
+        neutral_ecs.remove(i);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static boolean addNeutralEC(MapLocation loc, int influence) {
+      boolean found = false;
+      for (NeutralEC e : neutral_ecs) {
+        if (e.loc.equals(loc)) {
+          found = true;
+          e.influence = influence;
+          break;
+        }
+      }
+      if (!found) {
+        neutral_ecs.add(new NeutralEC(loc, influence));
+        System.out.println("Found neutral EC at " + loc + ", inf = " + influence);
+        rc.setIndicatorLine(rc.getLocation(), loc, 127, 127, 127);
+      }
+      return !found;
+  }
+
   /**
    * Puts nearby units into `nearby`, reads flags, and updates the list of enemy
    * ECs.
@@ -54,13 +81,12 @@ public class Comms {
         Flag flag = Flag.decode(ec, rc.getFlag(ec_id));
         switch (flag.type) {
         case EnemyEC:
-          neutral_ecs.remove(flag.loc);
+          removeNeutralEC(flag.loc);
           if (!enemy_ecs.contains(flag.loc))
             enemy_ecs.add(flag.loc);
           break;
         case NeutralEC:
-          if (!neutral_ecs.contains(flag.loc))
-            neutral_ecs.add(flag.loc);
+          addNeutralEC(flag.loc, flag.influence);
           break;
         case FriendlyEC:
           if (!friendly_ecs.contains(flag.id))
@@ -72,6 +98,7 @@ public class Comms {
           break;
 
         case ConvertF:
+          removeNeutralEC(flag.loc);
           enemy_ecs.remove(flag.loc);
           break;
 
@@ -123,7 +150,7 @@ public class Comms {
             ec_id = i.ID;
           }
 
-          if (enemy_ecs.remove(iloc) || neutral_ecs.remove(iloc)) {
+          if (enemy_ecs.remove(iloc) || removeNeutralEC(iloc)) {
             queue.add(new Flag(Flag.Type.ConvertF, iloc));
           }
         }
@@ -141,15 +168,14 @@ public class Comms {
       } else if (i.type == ENLIGHTENMENT_CENTER) {
         if (i.team == team.opponent()) {
           // It's an enemy EC
-          neutral_ecs.remove(i.location);
-          if (!enemy_ecs.contains(i.location)) {
+          removeNeutralEC(iloc);
+          if (!enemy_ecs.contains(iloc)) {
             enemy_ecs.add(iloc);
             queue.add(new Flag(Flag.Type.EnemyEC, iloc));
           }
         } else {
           // It's a neutral EC
-          if (!neutral_ecs.contains(i.location)) {
-            neutral_ecs.add(i.location);
+          if (addNeutralEC(iloc, i.influence)) {
             queue.add(Flag.neutralEC(i.location, i.influence));
           }
         }
@@ -282,7 +308,7 @@ public class Comms {
     // If we're a slanderer, tell the EC about nearby muckrakers
     if (muckraker != null && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
       scary_muk = true;
-      rc.setFlag(new Flag(Flag.Type.Reinforce, muckraker).encode(ec, true));
+      rc.setFlag(new Flag(Flag.Type.Reinforce, muckraker).encode(ec, rc.getType() == SLANDERER));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
     }
