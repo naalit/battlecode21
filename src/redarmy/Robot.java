@@ -19,7 +19,7 @@ public class Robot {
 
       MapLocation loc = rc.getLocation();
 
-      if (target == null || loc.equals(target) || !Comms.isOnMap(target)) {
+      if (target == null || loc.equals(target) || (exploring && !Comms.isOnMap(target))) {
         if (exploring)
           target = retarget();
         else
@@ -297,8 +297,7 @@ public class Robot {
 
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
-    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && nfpols < 10
-        && (nfpols < 5 || rc.getConviction() < 100)) {
+    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && (nfpols > 4 || slanderer == null)) {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);

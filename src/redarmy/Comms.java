@@ -21,6 +21,8 @@ public class Comms {
   static RobotInfo[] nearby = {};
   static MapLocation ec;
   static Integer ec_id;
+  static MapLocation pending_ec;
+  static Integer pending_id;
   static boolean was_empty = true;
   static int id;
   static double avg_sin = 0, avg_cos = 0;
@@ -146,8 +148,8 @@ public class Comms {
             ec_id = i.ID;
           } else if (ec_id != i.ID) {
             queue.add(new Flag(Flag.Type.HelloEC, ec_id));
-            ec = iloc;
-            ec_id = i.ID;
+            pending_ec = iloc;
+            pending_id = i.ID;
           }
 
           if (enemy_ecs.remove(iloc) || removeNeutralEC(iloc)) {
@@ -330,6 +332,10 @@ public class Comms {
       rc.setFlag(next.encode(ec, rc.getType() == SLANDERER));
 
       switch (next.type) {
+      case HelloEC:
+        ec = pending_ec;
+        ec_id = pending_id;
+        break;
       case None:
       case Reinforce:
         break;
