@@ -114,7 +114,8 @@ public class ECenter {
       // Spawn a pol designed to take out this neutral EC, with >=1.5x EC inf
       // TODO: tell it to target that EC
       // spend >= inf * 3/2 ==> spend * 2 >= inf * 3
-      if (closest != null && spend * 2 >= closest.influence * 3) {
+      if (neutral_ec_changed && closest != null && spend * 2 >= closest.influence * 3) {
+        neutral_ec_changed = false;
         return spend;
       }
 
@@ -492,6 +493,8 @@ public class ECenter {
     }
   }
 
+  static boolean neutral_ec_changed = false;
+
   static void addNeutralEC(MapLocation loc, int influence) {
     for (NeutralEC ec : neutral_ecs) {
       // If it's already there, update to the latest influence value
@@ -501,7 +504,7 @@ public class ECenter {
         return;
       }
     }
-    System.out.println("Found neutral EC at " + loc + ", inf = " + influence);
+    neutral_ec_changed = true;
     neutral_ecs.add(new NeutralEC(loc, influence));
     rc.setIndicatorLine(rc.getLocation(), loc, 127, 127, 127);
   }
@@ -513,6 +516,7 @@ public class ECenter {
         return true;
       }
     }
+    neutral_ec_changed = true;
     return false;
   }
 

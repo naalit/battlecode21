@@ -282,7 +282,6 @@ public class Robot {
     }
 
     // Find the closest neutral EC
-    // TODO: we sometimes want to attack enemy ECs too
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
     for (NeutralEC eec : Comms.neutral_ecs) {
@@ -294,10 +293,22 @@ public class Robot {
         ec_dist2 = dist2;
       }
     }
+    // If there aren't any neutral ECs, and we have >= 100 conv, target an enemy EC
+    if (target_ec == null) {
+      for (MapLocation eec : Comms.enemy_ecs) {
+        if (rc.getConviction() - 10 < 100)
+          continue;
+        int dist2 = eec.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
+        if (target_ec == null || dist2 < ec_dist2) {
+          target_ec = eec;
+          ec_dist2 = dist2;
+        }
+      }
+    }
 
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
-    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && (nfpols > 4 || slanderer == null)) {
+    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256) && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 400) {
       target = Comms.reinforce_loc;
       Comms.reinforce_loc = null;
       targetMove(true);
