@@ -32,10 +32,13 @@ public class ECenter {
     if (last_votes > 750 || rc.getRoundNum() < 50 || rc.getConviction() < 200)
       return;
     // If our votes didn't change, we lost, and need to bid higher.
-    boolean lost_last_round = bid_last_round && rc.getTeamVotes() == last_votes;
+    boolean lost_last_round = rc.getTeamVotes() == last_votes;
     last_votes = rc.getTeamVotes();
-    if (lost_last_round) {
+    if (bid_last_round && lost_last_round) {
       current_bid += 1;
+    } else if (!bid_last_round && !lost_last_round) {
+      rc.bid(2);
+      return;
     }
     // We focus on destroying them instead of winning votes, so we only bid if it's
     // 10% or less of our influence
@@ -44,6 +47,7 @@ public class ECenter {
       rc.bid(current_bid);
     } else {
       bid_last_round = false;
+      rc.bid(2);
     }
   }
 
