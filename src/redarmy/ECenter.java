@@ -1,7 +1,5 @@
 package redarmy;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
 import battlecode.common.*;
 import static battlecode.common.RobotType.*;

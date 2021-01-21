@@ -1,16 +1,16 @@
 package redarmy;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import battlecode.common.*;
 import static battlecode.common.RobotType.*;
 
 public class Robot {
   static RobotController rc;
-  static Team team;
-  static boolean moved_yet = false;
   static MapLocation target = null;
   static int retarget_acc;
-  static ArrayList<RobotInfo> affected = new ArrayList<>();
+
+  // -- PATHFINDING -- //
 
   static boolean targetMove() {
     return targetMove(false);
@@ -40,7 +40,7 @@ public class Robot {
       int prev_dist2 = loc.distanceSquaredTo(target);
       for (MapLocation i : options) {
         // Don't occupy EC spawning spaces
-        if ((Comms.ec != null && i.isWithinDistanceSquared(Comms.ec, 2)) || !rc.canMove(loc.directionTo(i)))
+        if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
           continue;
 
         if (i.equals(target)) {
@@ -60,7 +60,7 @@ public class Robot {
           MapLocation[] others = { loc.add(dir.rotateLeft().rotateLeft()), loc.add(dir.rotateRight().rotateRight()) };
           for (MapLocation i : others) {
             // Don't occupy EC spawning spaces
-            if ((Comms.ec != null && i.isWithinDistanceSquared(Comms.ec, 2)) || !rc.canMove(loc.directionTo(i)))
+            if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
               continue;
 
             if (rc.sensePassability(i) > best_pass) {
@@ -111,7 +111,7 @@ public class Robot {
     for (Direction dir : Direction.values()) {
       if (rc.canMove(dir)) {
         MapLocation l = rc.getLocation().add(dir).add(dir);
-        int d = Math.abs(l.distanceSquaredTo(Comms.ec) - r2);
+        int d = Math.abs(l.distanceSquaredTo(ec) - r2);
         if (d < closest_d) {
           closest = dir;
           closest_d = d;
@@ -123,311 +123,284 @@ public class Robot {
     targetMove();
   }
 
+  // -- COMMUNICATION -- //
+
+  static ArrayDeque<Flag> queue = new ArrayDeque<>();
+  public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
   /**
-   * Runs most of a politician's turn, after updating comms. Figures out whether
-   * to empower and where to move.
+   * Keeps track of the total amount of conviction by friendly slanderers in
+   * range, used to calculate average politician conviction.
    */
-  static void polTurn() throws GameActionException {
-    MapLocation loc = rc.getLocation();
-    Team team = rc.getTeam();
+  public static int total_fslan_conv = 0;
+  static Team team;
+  static RobotInfo[] nearby = {};
+  static MapLocation ec;
+  static Integer ec_id;
+  static MapLocation pending_ec;
+  static Integer pending_id;
+  static boolean was_empty = true;
+  static int id;
+  static double avg_sin = 0, avg_cos = 0;
+  static boolean has_seen_enemy = false;
 
-    // A politician has 2 goals:
-    // 1. Deal damage to enemy units, especially ECs
-    // 2. Protect friendly slanderers, and our ECs
+  static boolean has_reinforced = false;
+  static MapLocation reinforce_loc = null;
+  static MapLocation muckraker = null;
+  static MapLocation cvt_loc = null;
 
-    // When it's worth it to empower depends on how much conviction this unit has.
-    // If it's <=10, empowering won't do anything, so we should just block things
-    // and wait for others to possibly heal us to >10 conviction.
+  /**
+   * Puts nearby units into `nearby`, reads flags, and updates the list of enemy
+   * ECs.
+   */
+  public static void updateComms() throws GameActionException {
+    int start_round = rc.getRoundNum();
 
-    // We'll start by looking at what's around us.
-    // We want to figure out how many units total are in each possible empowering
-    // radius, which damage would be divided between.
-    final int[] radii = { 1, 2, 4, 9 }; // These are squared
-    int[] rcounts = { 0, 0, 0, 0 };
-    // We also keep track of how many politicians are near here, and their average
-    // conviction
-    // We'll see slanderers as politicians, so subtract those first
-    int nfpols = -Comms.friendly_slanderers.size();
-    int fpol_conv = -Comms.total_fslan_conv;
-    affected.clear();
-    // We also want to know where enemy muckrakers are, so we can protect slanderers
-    // We just look at the closest muckraker
-    RobotInfo muckraker = null;
-    for (RobotInfo i : Comms.nearby) {
-      int dist2 = i.location.distanceSquaredTo(loc);
-
-      if (i.team != team && i.type == MUCKRAKER
-          && (muckraker == null || dist2 < muckraker.location.distanceSquaredTo(loc)))
-        muckraker = i;
-      else if (i.team == team && i.type == POLITICIAN) {
-        nfpols++;
-        fpol_conv += i.conviction;
-      }
-
-      if (dist2 <= POLITICIAN.actionRadiusSquared) {
-        // If it could recieve damage or healing from this politician, add it to
-        // `affected` so we can process it later
-        if (i.team != team || i.conviction < i.influence || i.type == ENLIGHTENMENT_CENTER)
-          affected.add(i);
-
-        for (int r = 0; r < rcounts.length; r++) {
-          int r2 = radii[r];
-          if (dist2 <= r2)
-            rcounts[r]++;
+    if (ec_id != null) {
+      rc.setIndicatorLine(rc.getLocation(), ec, 128, 128, 0);
+      try {
+        Flag flag = Flag.decode(ec, rc.getFlag(ec_id));
+        switch (flag.type) {
+        case EnemyEC: {
+          ECInfo ecif = new ECInfo(flag.loc);
+          Model.neutral_ecs.remove(ecif);
+          Model.addEnemyEC(ecif);
+          break;
         }
-      }
-    }
+        case NeutralEC:
+          Model.addNeutralEC(new ECInfo(flag.loc, flag.influence));
+          break;
+        case FriendlyEC:
+          Model.addFriendlyEC(new ECInfo(flag.id));
+          break;
 
-    // We also pick a slanderer to protect.
-    // If we've found a muckraker, we pick the closest one to the muckraker, since
-    // it's in the most danger.
-    // Otherwise, we pick the closest one to us.
-    RobotInfo slanderer = null;
-    MapLocation rloc = (muckraker == null) ? loc : muckraker.location;
-    for (RobotInfo i : Comms.friendly_slanderers) {
-      if (slanderer == null || i.location.distanceSquaredTo(rloc) < slanderer.location.distanceSquaredTo(rloc))
-        slanderer = i;
-    }
+        case Edge:
+          Model.setEdge(flag.aux_flag, flag.loc, ec);
+          break;
 
-    // If the muckraker will be able to kill the slanderer after moving, and we can
-    // kill the muckraker, and the slanderer has higher influence than we have
-    // conviction (which is usually true), then we need to kill the muckraker so it
-    // doesn't kill the slanderer.
-    MapLocation mucknext = muckraker == null || slanderer == null ? null
-        : muckraker.location.add(muckraker.location.directionTo(slanderer.location));
-    if (muckraker != null && slanderer != null
-    // Either the muckraker is in kill distance now, or will be in after moving once
-    // and can move
-        && (muckraker.location.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-            || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-                && !rc.isLocationOccupied(mucknext)))
-        // We're in kill distance of the muckraker now (radii[3] is the maximum radius
-        // for empowering)
-        && muckraker.location.isWithinDistanceSquared(loc, radii[3])
-        // We can do damage
-        && rc.getConviction() > 10
-        // The slanderer is worth saving
-        && slanderer.influence >= rc.getConviction()) {
-      if (rc.canEmpower(radii[3])) {
-        rc.empower(radii[3]);
-        return;
-      }
-    }
-
-    // If there's a muckraker threatening a slanderer, but we're not going to blow
-    // it up right now, we should at least try to block it
-    if (muckraker != null && slanderer != null
-    // If there are a lot of politicians and we're fairly far away, it's another
-    // politician's job
-        && (nfpols < 10 || loc.isWithinDistanceSquared(muckraker.location, 36))) {
-      target = mucknext;
-      targetMove();
-      return;
-    }
-
-    // Otherwise, we're not immediately worrying about protecting slanderers, so
-    // figure out whether it's worth it to empower.
-
-    // Calculate total damage done for each possible radius
-    int useful_conv = (int) (rc.getConviction() * rc.getEmpowerFactor(rc.getTeam(), 0)) - 10;
-    int[] totals = { 0, 0, 0, 0 };
-    boolean[] hits_enemy = { false, false, false, false };
-    for (RobotInfo i : affected) {
-      int dist2 = i.location.distanceSquaredTo(loc);
-
-      // Make sure pols don't crowd enemy ECs and not do anything
-      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 <= radii[0])
-        totals[0] += useful_conv / 2;
-
-      for (int r = 0; r < rcounts.length; r++) {
-        int r2 = radii[r];
-        if (dist2 <= r2) {
-          hits_enemy[r] |= i.team != team;
-          // Sometimes units end up with 0 conviction, but still need to be hit
-          // Also, we assume remainder damage (if rcounts[r] > useful_conv) is given to
-          // everyone, not in the order it actually is, for efficiency
-          totals[r] += Math.max(1, Math.min(useful_conv / rcounts[r],
-              // We can contribute as much as we want to friendly ECs, and extra damage done
-              // to enemy ECs rolls over into when it's friendly
-              (i.type == ENLIGHTENMENT_CENTER) ? 10000 :
-              // Our units can only heal upto their cap
-                  (i.team == team ? i.influence - i.conviction : i.conviction)));
+        case ConvertF: {
+          ECInfo ecif = new ECInfo(flag.loc);
+          if (Model.neutral_ecs.remove(ecif)) {
+            rc.setIndicatorLine(rc.getLocation(), flag.loc, 255, 0, 255);
+            cvt_loc = flag.loc;
+          }
+          Model.enemy_ecs.remove(ecif);
+          break;
         }
-      }
-    }
+        case Reinforce:
+        case Reinforce2:
+          reinforce_loc = flag.loc;
+          has_reinforced = true;
+          break;
 
-    // Find the radius with the highest total damage, but only count when we do
-    // damage to enemies
-    // Otherwise we'd be net losing money unless we have a big muckraker buff
-    int max_r2 = 9;
-    int max_damage = 0;
-    for (int r = 0; r < totals.length; r++) {
-      int r2 = radii[r];
-      int damage = totals[r];
-      if ((hits_enemy[r] || damage > rc.getConviction()) && damage > max_damage) {
-        max_r2 = r2;
-        max_damage = damage;
-      }
-    }
-
-    // Empower if we'd be using at least half of our conviction, not counting tax;
-    // or if there are a ton of politicians around and this one is at or below
-    // average,
-    // so its life isn't worth much
-    int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
-    if ((useful_conv * 2 <= 3 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
-        && rc.canEmpower(max_r2)) {
-      rc.empower(max_r2);
-      return;
-    }
-
-    // Find the closest neutral EC
-    MapLocation target_ec = null;
-    int ec_dist2 = 1000000;
-    for (ECInfo eec : Model.neutral_ecs) {
-      if (eec.influence >= rc.getConviction() - 10)
-        continue;
-      int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
-      if (target_ec == null || dist2 < ec_dist2) {
-        target_ec = eec.loc;
-        ec_dist2 = dist2;
-      }
-    }
-    // If there aren't any neutral ECs, and we have >= 100 conv, target an enemy EC
-    if (target_ec == null) {
-      for (ECInfo eec : Model.enemy_ecs) {
-        if (rc.getConviction() - 10 < 100)
-          continue;
-        int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
-        if (target_ec == null || dist2 < ec_dist2) {
-          target_ec = eec.loc;
-          ec_dist2 = dist2;
+        // As a robot, we know our home EC's location already
+        case MyLocationX:
+        case MyLocationY:
+        case HelloEC:
+        case None:
+          break;
         }
+      } catch (GameActionException e) {
+        // Our EC is dead
+        ec = null;
+        ec_id = null;
       }
     }
 
-    // Now we've decided we're not empowering, so we can move.
-    // If the EC has requested reinforcements somewhere, go there.
-    if (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(loc, 256)
-        && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 400) {
-      target = Comms.reinforce_loc;
-      Comms.reinforce_loc = null;
-      targetMove(true);
-    } else if (!Comms.has_reinforced && (muckraker == null || slanderer == null) && ec_dist2 < 512
-        && rc.getConviction() > 25) {
-      target = target_ec;
-      targetMove();
-    } else if (Comms.ec != null && slanderer != null && (nfpols < 20 || rc.getConviction() <= 25)
-        && (nfpols < 8 || rc.getConviction() < 100)) {
-      // System.out.println("has_reinforced = " + Comms.has_reinforced + ", muckraker
-      // = " + muckraker + ", slanderer = " + slanderer + ", ec_dist2 = " + ec_dist2);
-      // If there are slanderers nearby, we want to be able to protect them, so stay
-      // close. Unless there are too many politicians already here.
-      // We want to be about 2 units away.
-      // So, for a target, we circle the EC 2 units farther out than the slanderer we
-      // picked earlier.
-      double r = Math.sqrt(slanderer.location.distanceSquaredTo(Comms.ec));
-      // Offset by 2.7 to make sure it rounds right
-      circleEC(r + 2.7);
-    } else if (Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 100)
-        && (nfpols < 20 || rc.getConviction() <= 25) && (nfpols < 8 || rc.getConviction() < 100)) {
-      circleEC(4);
-    } else {
-      // If there aren't any slanderers nearby (or we just don't have an EC, which is
-      // rare), we explore, targeting enemy ECs if available
-      if (target_ec != null)
-        target = target_ec;
-      else if (Comms.cvt_loc != null)
-        target = Comms.cvt_loc;
-      targetMove(true);
-    }
-  }
+    // Sense nearby robots and store them in `nearby`
+    nearby = rc.senseNearbyRobots();
+    friendly_slanderers.clear();
+    total_fslan_conv = 0;
+    muckraker = null;
 
-  static void slanTurn() throws GameActionException {
-    // Run away from enemy muckrakers
-    if (Comms.muckraker != null
-        || (Comms.reinforce_loc != null && Comms.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 100))) {
-      MapLocation run_from = Comms.muckraker != null ? Comms.muckraker : Comms.reinforce_loc;
-      Direction dir = run_from.directionTo(rc.getLocation());
-      target = rc.adjacentLocation(dir).add(dir);
-      targetMove(false);
-      Comms.reinforce_loc = null;
-    } else if (Comms.ec != null) {
-      // Slanderers circle the EC, if they have one
-      circleEC(3);
-    } else {
-      targetMove(true);
-    }
-  }
+    for (RobotInfo i : nearby) {
+      MapLocation iloc = i.location;
+      if (i.team == team) {
+        // If it's a friendly EC, it might have been converted and needs to be removed
+        // from enemy_ecs and sent to others
+        if (i.type == ENLIGHTENMENT_CENTER) {
+          ECInfo ecif = new ECInfo(i.ID);
+          ecif.loc = iloc;
 
-  static void mukTurn() throws GameActionException {
-    // Target the slanderer with the highest influence (which generates the most
-    // money) in range
-    Team enemy = rc.getTeam().opponent();
-    RobotInfo strongest_close = null;
-    RobotInfo strongest_far = null;
-    for (RobotInfo i : Comms.nearby) {
-      if (i.team == enemy && i.type == SLANDERER) {
-        if (i.location.isWithinDistanceSquared(rc.getLocation(), MUCKRAKER.actionRadiusSquared)) {
-          if (strongest_close == null || i.influence > strongest_close.influence)
-            strongest_close = i;
+          if (Model.addFriendlyEC(ecif)) {
+            if (ec_id != null && ec_id != i.ID) {
+              queue.add(new Flag(Flag.Type.FriendlyEC, i.ID));
+            }
+          }
+
+          if (ec == null) {
+            ec = iloc;
+            ec_id = i.ID;
+          } else if (ec_id != i.ID) {
+            queue.add(new Flag(Flag.Type.HelloEC, ec_id));
+            pending_ec = iloc;
+            pending_id = i.ID;
+            cvt_loc = null;
+          }
+
+          if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif)) {
+            rc.setIndicatorLine(rc.getLocation(), iloc, 255, 0, 255);
+            cvt_loc = iloc;
+            queue.addFirst(new Flag(Flag.Type.ConvertF, iloc));
+          }
+        }
+
+        // If we're out of time, give up so we don't try to read flags of a unit that's
+        // now out of range
+        if (rc.getRoundNum() != start_round || Clock.getBytecodesLeft() < 1000)
+          break;
+
+        if (Flag.isSlanderer(rc.getFlag(i.ID))) {
+          friendly_slanderers.add(i);
+          total_fslan_conv += i.conviction;
+        }
+
+      } else if (i.type == ENLIGHTENMENT_CENTER) {
+        ECInfo ecif = new ECInfo(iloc, i.influence);
+        ecif.id = i.ID;
+
+        if (i.team == team.opponent()) {
+          // It's an enemy EC
+          Model.neutral_ecs.remove(ecif);
+          if (Model.addEnemyEC(ecif)) {
+            queue.add(new Flag(Flag.Type.EnemyEC, iloc));
+          }
         } else {
-          if (strongest_far == null || i.influence > strongest_far.influence)
-            strongest_far = i;
+          // It's a neutral EC
+          if (Model.addNeutralEC(ecif)) {
+            queue.add(Flag.neutralEC(i.location, i.influence));
+          }
         }
+      } else if (i.type == MUCKRAKER) {
+        if (muckraker == null
+            || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
+          muckraker = i.location;
       }
     }
-    if (strongest_close != null && rc.canExpose(strongest_close.location)) {
-      rc.expose(strongest_close.location);
-    } else if (strongest_far != null) {
-      // Move towards any slanderers that aren't in range yet
-      target = strongest_far.location;
+
+    // Check for edges ourselves
+    int sensor_radius = (int) Math.sqrt(rc.getType().sensorRadiusSquared);
+    MapLocation loc = rc.getLocation();
+    if (Model.minX == null && !rc.onTheMap(loc.translate(-sensor_radius, 0))) {
+      tryQueue(Model.findEdge(loc.translate(-sensor_radius, 0), 1, 0, false));
+    }
+    if (Model.maxX == null && !rc.onTheMap(loc.translate(sensor_radius, 0))) {
+      tryQueue(Model.findEdge(loc.translate(sensor_radius, 0), -1, 0, false));
+    }
+    if (Model.minY == null && !rc.onTheMap(loc.translate(0, -sensor_radius))) {
+      tryQueue(Model.findEdge(loc.translate(0, -sensor_radius), 0, 1, true));
+    }
+    if (Model.maxY == null && !rc.onTheMap(loc.translate(0, sensor_radius))) {
+      tryQueue(Model.findEdge(loc.translate(0, sensor_radius), 0, -1, true));
+    }
+  }
+
+  /**
+   * Adds the given flag to the queue only if it isn't *null*.
+   */
+  static void tryQueue(Flag flag) {
+    if (flag != null)
+      queue.add(flag);
+  }
+
+  static int counter = 0;
+  static boolean scary_muk = false;
+
+  public static void showFlag() throws GameActionException {
+    if (ec == null)
+      return;
+
+    // If we're a slanderer, tell the EC about nearby muckrakers
+    if (muckraker != null && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
+      scary_muk = true;
+      rc.setFlag(new Flag(Flag.Type.Reinforce, muckraker).encode(ec, rc.getType() == SLANDERER));
+      rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
+      return;
     }
 
-    if (target == null && Comms.ec != null && Comms.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
-      Direction dir = Comms.ec.directionTo(rc.getLocation());
-      target = Comms.ec.translate(dir.dx * 100, dir.dy * 100);
+    if (scary_muk) {
+      scary_muk = false;
+      rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }
 
-    // Wander around constantly
-    targetMove(true);
+    // Make sure to display the flag for enough turns that our home EC sees it
+    int nturns = rc.getRobotCount() / 200;
+    if (counter < nturns) {
+      counter++;
+      return;
+    }
+
+    if (!queue.isEmpty()) {
+      Flag next = queue.remove();
+      rc.setFlag(next.encode(ec, rc.getType() == SLANDERER));
+
+      switch (next.type) {
+      case HelloEC:
+        ec = pending_ec;
+        ec_id = pending_id;
+        break;
+      case None:
+      case Reinforce:
+        break;
+      default:
+        counter = 0;
+      }
+    } else {
+      rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
+    }
   }
 
   static void turn() throws GameActionException {
-    Comms.update();
-
-    // Move out of the spawning space we're occupying as soon as possible
-    // if (!moved_yet && Comms.ec != null) {
-    // Direction dir = Comms.ec.directionTo(rc.getLocation());
-    // target = rc.getLocation().add(dir).add(dir);
-    // if (targetMove())
-    // moved_yet = true;
-    // return;
-    // }
+    updateComms();
 
     switch (rc.getType()) {
     case SLANDERER:
-      slanTurn();
+      Slanderer.turn();
       break;
     case POLITICIAN:
-      polTurn();
+      Politician.turn();
       break;
     case MUCKRAKER:
-      mukTurn();
+      Muckraker.turn();
       break;
     default:
       System.out.println("NO MOVEMENT CODE FOR " + rc.getType());
       rc.resign();
     }
 
-    Comms.finish();
+    showFlag();
+  }
+
+  public static void init(RobotController rc) {
+    Model.init(rc);
+    team = rc.getTeam();
+
+    switch (rc.getType()) {
+    // For a slanderer, initialize both slanderer and politician code
+    case SLANDERER:
+      Slanderer.init(rc);
+    case POLITICIAN:
+      Politician.init(rc);
+      break;
+    case MUCKRAKER:
+      Muckraker.init(rc);
+      break;
+    default:
+      System.out.println("NO MOVEMENT CODE FOR " + rc.getType());
+      rc.resign();
+    }
+    Robot.rc = rc;
+    retarget_acc = rc.getID();
+
+    try {
+      if (rc.getType() == SLANDERER)
+        rc.setFlag(new Flag(Flag.Type.None).encode(rc.getLocation(), true));
+    } catch (GameActionException e) {
+      e.printStackTrace();
+    }
   }
 
   public static void run(RobotController rc) {
-    Comms.start(rc);
-    Robot.rc = rc;
-    team = rc.getTeam();
-    retarget_acc = rc.getID();
+    init(rc);
 
     while (true) {
       try {
