@@ -9,6 +9,8 @@ public class Robot {
   static Team team;
   static boolean moved_yet = false;
   static MapLocation target = null;
+  static int retarget_acc;
+  static ArrayList<RobotInfo> affected = new ArrayList<>();
 
   static boolean targetMove() {
     return targetMove(false);
@@ -19,7 +21,7 @@ public class Robot {
 
       MapLocation loc = rc.getLocation();
 
-      if (target == null || loc.equals(target) || (exploring && !Comms.isOnMap(target))) {
+      if (target == null || loc.equals(target) || (exploring && !Model.isOnMap(target))) {
         if (exploring)
           target = retarget();
         else
@@ -81,13 +83,11 @@ public class Robot {
     }
   }
 
-  static int retarget_acc;
-
   static MapLocation retarget() {
-    int width = (Comms.minX != null && Comms.maxX != null) ? Comms.maxX - Comms.minX : 64;
-    int height = (Comms.minY != null && Comms.maxY != null) ? Comms.maxY - Comms.minY : 64;
-    MapLocation min = new MapLocation(Comms.minX != null ? Comms.minX : rc.getLocation().x - width / 2,
-        Comms.minY != null ? Comms.minY : rc.getLocation().y - height / 2);
+    int width = (Model.minX != null && Model.maxX != null) ? Model.maxX - Model.minX : 64;
+    int height = (Model.minY != null && Model.maxY != null) ? Model.maxY - Model.minY : 64;
+    MapLocation min = new MapLocation(Model.minX != null ? Model.minX : rc.getLocation().x - width / 2,
+        Model.minY != null ? Model.minY : rc.getLocation().y - height / 2);
 
     return retarget(min, width, height);
   }
@@ -122,8 +122,6 @@ public class Robot {
       target = rc.getLocation().add(closest);
     targetMove();
   }
-
-  static ArrayList<RobotInfo> affected = new ArrayList<>();
 
   /**
    * Runs most of a politician's turn, after updating comms. Figures out whether
@@ -286,7 +284,7 @@ public class Robot {
     // Find the closest neutral EC
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
-    for (NeutralEC eec : Comms.neutral_ecs) {
+    for (ECInfo eec : Model.neutral_ecs) {
       if (eec.influence >= rc.getConviction() - 10)
         continue;
       int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
@@ -297,12 +295,12 @@ public class Robot {
     }
     // If there aren't any neutral ECs, and we have >= 100 conv, target an enemy EC
     if (target_ec == null) {
-      for (MapLocation eec : Comms.enemy_ecs) {
+      for (ECInfo eec : Model.enemy_ecs) {
         if (rc.getConviction() - 10 < 100)
           continue;
-        int dist2 = eec.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
+        int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
         if (target_ec == null || dist2 < ec_dist2) {
-          target_ec = eec;
+          target_ec = eec.loc;
           ec_dist2 = dist2;
         }
       }

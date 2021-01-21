@@ -107,9 +107,9 @@ public class ECenter {
       return 0;
     }
     case POLITICIAN: {
-      NeutralEC closest = null;
+      ECInfo closest = null;
       int closest_d = 100000;
-      for (NeutralEC e : neutral_ecs) {
+      for (ECInfo e : Model.neutral_ecs) {
         if (e.loc.isWithinDistanceSquared(rc.getLocation(), closest_d)) {
           closest = e;
           closest_d = e.loc.distanceSquaredTo(rc.getLocation());
@@ -165,88 +165,6 @@ public class ECenter {
       MapLocation l = rc.adjacentLocation(dir);
       addID(rc.senseRobotAtLocation(l).ID);
     }
-  }
-
-  // -- MAP STUFF -- //
-
-  public static Integer minX = null;
-  public static Integer minY = null;
-  public static Integer maxX = null;
-  public static Integer maxY = null;
-
-  /**
-   * Checks if the location is on the map, returning `true` if unsure. Uses the
-   * edges we've found if possible.
-   */
-  static boolean isOnMap(MapLocation loc) {
-    try {
-      if ((minY != null && loc.y < minY) || (maxY != null && loc.y > maxY) || (minX != null && loc.x < minX)
-          || (maxX != null && loc.x > maxX))
-        return false;
-      if (minY == null || maxY == null || minX == null || maxX == null) {
-        return (!loc.isWithinDistanceSquared(rc.getLocation(), rc.getType().sensorRadiusSquared) || rc.onTheMap(loc));
-      } else {
-        // We know the edges, no need to consult `rc`.
-        return true;
-      }
-    } catch (GameActionException e) {
-      e.printStackTrace();
-      return true;
-    }
-  }
-
-  /**
-   * Processes an edge location that was found or recieved from a teammate. If we
-   * already know about it, does nothing. If not, saves it and queues a message to
-   * tell others about it.
-   */
-  static boolean setEdge(boolean is_y, MapLocation flag_loc, MapLocation unit_loc) {
-    if (is_y) {
-      // It's possible both units are on the edge; if so, we can see which direction
-      // is on the map
-      if (flag_loc.y == unit_loc.y && flag_loc.y == rc.getLocation().y) {
-        MapLocation alt = rc.getLocation().translate(0, 1);
-        if (isOnMap(alt))
-          unit_loc = alt;
-        else
-          unit_loc = rc.getLocation().translate(0, -1);
-      }
-
-      // It's possible that unit is *at* the edge, so flag_loc.y = unit_loc.y;
-      // but if so, this unit *isn't* at the edge, so we use that instead.
-      if (flag_loc.y < unit_loc.y || flag_loc.y < rc.getLocation().y) {
-        // If we've already seen this edge, don't relay it further; we don't want
-        // infinite loops.
-        if (minY != null)
-          return false;
-        minY = flag_loc.y;
-      } else {
-        if (maxY != null)
-          return false;
-        maxY = flag_loc.y;
-      }
-    } else {
-      if (flag_loc.x == unit_loc.x && flag_loc.x == rc.getLocation().x) {
-        MapLocation alt = rc.getLocation().translate(1, 0);
-        if (isOnMap(alt))
-          unit_loc = alt;
-        else
-          unit_loc = rc.getLocation().translate(-1, 0);
-      }
-
-      if (flag_loc.x < unit_loc.x || flag_loc.x < rc.getLocation().x) {
-        if (minX != null)
-          return false;
-        minX = flag_loc.x;
-      } else {
-        if (maxX != null)
-          return false;
-        maxX = flag_loc.x;
-      }
-    }
-
-    rc.setIndicatorLine(rc.getLocation(), flag_loc, 255, 0, 0);
-    return true;
   }
 
   // -- COMMUNICATION -- //
@@ -311,21 +229,26 @@ public class ECenter {
 
     switch (flag.type) {
     case FriendlyEC:
-      addFriendlyEC(flag.id);
+      Model.addFriendlyEC(new ECInfo(flag.id));
       break;
     case NeutralEC:
-      addNeutralEC(flag.loc, flag.influence);
+      Model.addNeutralEC(new ECInfo(flag.loc, flag.influence));
       break;
-    case EnemyEC:
-      addEnemyEC(flag.loc);
+    case EnemyEC: {
+      ECInfo ecif = new ECInfo(flag.loc);
+      Model.neutral_ecs.remove(ecif);
+      Model.addEnemyEC(ecif);
       break;
-    case ConvertF:
-    if (enemy_ecs.remove(flag.loc) || removeNeutralEC(flag.loc))
-      if (cvt_pending == null)
-        cvt_pending = flag.loc;
+    }
+    case ConvertF: {
+      ECInfo ecif = new ECInfo(flag.loc);
+      if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif))
+        if (cvt_pending == null)
+          cvt_pending = flag.loc;
       break;
+    }
     case Edge:
-      setEdge(flag.aux_flag, flag.loc, rc.getLocation());
+      Model.setEdge(flag.aux_flag, flag.loc, rc.getLocation());
       break;
 
     // If a slanderer is scared, ask for reinforcements
@@ -385,21 +308,9 @@ public class ECenter {
     left_off = end == endidx ? 0 : end;
   }
 
-  static class ECInfo {
-    int id;
-    MapLocation loc = null;
-    int x = 0, y = 0;
-
-    ECInfo(int id) {
-      this.id = id;
-    }
-  }
-
-  static ArrayList<ECInfo> friendly_ecs = new ArrayList<>(8);
-
   static void updateECFlags() {
-    for (int i = 0; i < friendly_ecs.size(); i++) {
-      ECInfo ec = friendly_ecs.get(i);
+    for (int i = 0; i < Model.friendly_ecs.size(); i++) {
+      ECInfo ec = Model.friendly_ecs.get(i);
       try {
         int flag = rc.getFlag(ec.id);
         if ((flag & Flag.HEADER_MASK) != 0) {
@@ -409,36 +320,45 @@ public class ECenter {
 
             switch (f.type) {
             case FriendlyEC:
-              addFriendlyEC(f.id);
+              Model.addFriendlyEC(new ECInfo(f.id));
               break;
             case NeutralEC:
-              addNeutralEC(f.loc, f.influence);
+              Model.addNeutralEC(new ECInfo(f.loc, f.influence));
               break;
-            case EnemyEC:
-              addEnemyEC(f.loc);
+            case EnemyEC: {
+              ECInfo ecif = new ECInfo(f.loc);
+              Model.neutral_ecs.remove(ecif);
+              Model.addEnemyEC(ecif);
               break;
-            case ConvertF:
-              if (enemy_ecs.remove(f.loc) || removeNeutralEC(f.loc))
+            }
+            case ConvertF: {
+              ECInfo ecif = new ECInfo(f.loc);
+              if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif))
                 if (cvt_pending == null)
                   cvt_pending = f.loc;
               break;
+            }
             case Edge:
-              setEdge(f.aux_flag, f.loc, ec.loc);
+              Model.setEdge(f.aux_flag, f.loc, ec.loc);
               break;
             case MyLocationX:
-              ec.x = f.id;
-              if (ec.y != 0) {
-                ec.loc = new MapLocation(ec.x, ec.y);
-                if (enemy_ecs.remove(ec.loc) || removeNeutralEC(ec.loc))
+              if (ec.loc != null)
+                break;
+              ec.pendingX = f.id;
+              if (ec.pendingY != 0) {
+                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
               break;
             case MyLocationY:
-              ec.y = f.id;
-              if (ec.x != 0) {
-                ec.loc = new MapLocation(ec.x, ec.y);
-                if (enemy_ecs.remove(ec.loc) || removeNeutralEC(ec.loc))
+              if (ec.loc != null)
+                break;
+              ec.pendingY = f.id;
+              if (ec.pendingX != 0) {
+                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
@@ -458,10 +378,12 @@ public class ECenter {
         }
       } catch (GameActionException e) {
         // The EC is dead, so remove it
-        friendly_ecs.remove(i);
+        Model.friendly_ecs.remove(i);
         // If it's dead, it now belongs to the enemy
-        if (ec.loc != null)
-          enemy_ecs.add(ec.loc);
+        if (ec.loc != null) {
+          ec.id = null;
+          Model.enemy_ecs.add(ec);
+        }
         // Don't go past the end of the list
         i--;
       }
@@ -474,55 +396,7 @@ public class ECenter {
   static int loc_send_stage = 0;
   static MapLocation cvt_pending = null;
 
-  static void addFriendlyEC(int id) {
-    if (id == rc.getID())
-      return;
-    for (ECInfo i : friendly_ecs) {
-      if (i.id == id)
-        return;
-    }
-    friendly_ecs.add(new ECInfo(id));
-    // We need to tell this new EC our location
-    loc_send_stage = 0;
-  }
-
-  static ArrayList<MapLocation> enemy_ecs = new ArrayList<>(8);
-
-  static ArrayList<NeutralEC> neutral_ecs = new ArrayList<>(8);
-
-  static void addEnemyEC(MapLocation loc) {
-    if (!enemy_ecs.contains(loc)) {
-      enemy_ecs.add(loc);
-      rc.setIndicatorLine(rc.getLocation(), loc, 0, 0, 0);
-    }
-  }
-
   static boolean neutral_ec_changed = false;
-
-  static void addNeutralEC(MapLocation loc, int influence) {
-    for (NeutralEC ec : neutral_ecs) {
-      // If it's already there, update to the latest influence value
-      if (ec.loc.equals(loc)) {
-        ec.influence = influence;
-        rc.setIndicatorLine(rc.getLocation(), loc, 255, 127, 127);
-        return;
-      }
-    }
-    neutral_ec_changed = true;
-    neutral_ecs.add(new NeutralEC(loc, influence));
-    rc.setIndicatorLine(rc.getLocation(), loc, 127, 127, 127);
-  }
-
-  static boolean removeNeutralEC(MapLocation loc) {
-    for (int i = 0; i < neutral_ecs.size(); i++) {
-      if (neutral_ecs.get(i).loc.equals(loc)) {
-        neutral_ecs.remove(i);
-        return true;
-      }
-    }
-    neutral_ec_changed = true;
-    return false;
-  }
 
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
@@ -562,32 +436,32 @@ public class ECenter {
     }
 
     // Then share friendly ECs
-    if (friendly_ec_cursor < friendly_ecs.size()) {
-      ECInfo ec = friendly_ecs.get(friendly_ec_cursor++);
+    if (friendly_ec_cursor < Model.friendly_ecs.size()) {
+      ECInfo ec = Model.friendly_ecs.get(friendly_ec_cursor++);
       return new Flag(Flag.Type.FriendlyEC, ec.id);
     }
 
     // Otherwise, if we have enemy ECs stored, share those
-    if (neutral_ec_cursor < neutral_ecs.size()) {
-      NeutralEC ec = neutral_ecs.get(neutral_ec_cursor++);
+    if (neutral_ec_cursor < Model.neutral_ecs.size()) {
+      ECInfo ec = Model.neutral_ecs.get(neutral_ec_cursor++);
       return Flag.neutralEC(ec.loc, ec.influence);
     }
 
     // Otherwise, if we have enemy ECs stored, share those
-    if (enemy_ec_cursor < enemy_ecs.size()) {
-      MapLocation loc = enemy_ecs.get(enemy_ec_cursor++);
-      return new Flag(Flag.Type.EnemyEC, loc);
+    if (enemy_ec_cursor < Model.enemy_ecs.size()) {
+      ECInfo ec = Model.enemy_ecs.get(enemy_ec_cursor++);
+      return new Flag(Flag.Type.EnemyEC, ec.loc);
     }
 
     // And send edges
     edge_cursor++;
     MapLocation loc = rc.getLocation();
-    if (minX != null && edge_cursor <= 1) {
-      return new Flag(Flag.Type.Edge, false, new MapLocation(minX, loc.y));
-    } else if (maxX != null && edge_cursor <= 2) {
-      return new Flag(Flag.Type.Edge, false, new MapLocation(maxX, loc.y));
-    } else if (minY != null && edge_cursor <= 3) {
-      return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, minY));
+    if (Model.minX != null && edge_cursor <= 1) {
+      return new Flag(Flag.Type.Edge, false, new MapLocation(Model.minX, loc.y));
+    } else if (Model.maxX != null && edge_cursor <= 2) {
+      return new Flag(Flag.Type.Edge, false, new MapLocation(Model.maxX, loc.y));
+    } else if (Model.minY != null && edge_cursor <= 3) {
+      return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, Model.minY));
     } else {
       friendly_ec_cursor = 0;
       neutral_ec_cursor = 0;
@@ -595,8 +469,8 @@ public class ECenter {
       loc_send_stage = 0;
       edge_cursor = 0;
 
-      if (maxY != null) {
-        return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, maxY));
+      if (Model.maxY != null) {
+        return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, Model.maxY));
       }
     }
 
@@ -637,7 +511,7 @@ public class ECenter {
         switch (Flag.getType(flag)) {
         case HelloEC:
           Flag f = Flag.decode(null, flag);
-          addFriendlyEC(f.id);
+          Model.addFriendlyEC(new ECInfo(f.id));
           addID(i.ID);
           break;
         default:
@@ -669,6 +543,7 @@ public class ECenter {
   }
 
   public static void run(RobotController rc) {
+    Model.init(rc);
     ECenter.rc = rc;
     last_votes = rc.getTeamVotes();
 
