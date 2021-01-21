@@ -175,7 +175,8 @@ public class Politician {
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
     for (ECInfo eec : Model.neutral_ecs) {
-      if (eec.influence >= rc.getConviction() - 10)
+      // Only go for it if we'll do at least half damage
+      if (eec.influence >= (rc.getConviction() - 10) * 2)
         continue;
       int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
       if (target_ec == null || dist2 < ec_dist2) {
@@ -199,7 +200,7 @@ public class Politician {
     // Now we've decided we're not empowering, so we can move.
     // If the EC has requested reinforcements somewhere, go there.
     if (Robot.reinforce_loc != null && Robot.reinforce_loc.isWithinDistanceSquared(loc, 256)
-        && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 400) {
+        && (nfpols > 4 || slanderer == null) && rc.getConviction() <= 200) {
       Robot.target = Robot.reinforce_loc;
       Robot.reinforce_loc = null;
       Robot.targetMove(true);

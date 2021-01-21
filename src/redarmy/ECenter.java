@@ -485,6 +485,7 @@ public class ECenter {
 
     total_epol_conv = 0;
     is_muckraker_nearby = false;
+    boolean is_slanderer_nearby = false;
     npols = 0;
     nslans = 0;
     nmuks = 0;
@@ -504,6 +505,8 @@ public class ECenter {
           is_muckraker_nearby = true;
         }
       } else {
+        if (i.type == SLANDERER)
+          is_slanderer_nearby = true;
         // Read the flag; we only care if it's HelloEC, otherwise we'll see it anyway
         int flag = rc.getFlag(i.ID);
         switch (Flag.getType(flag)) {
@@ -525,6 +528,9 @@ public class ECenter {
           nmuks++;
       }
     }
+
+    if (is_muckraker_nearby && reinforce != null && !is_slanderer_nearby)
+      reinforce = null;
 
     updateECFlags();
     updateDistantFlags();
