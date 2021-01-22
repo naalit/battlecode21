@@ -18,7 +18,7 @@ public class Politician {
   static void lattice() throws GameActionException {
 
     MapLocation loc = rc.getLocation();
-    if (loc.x % 3 == 0 && loc.y % 3 == 0)
+    if (loc.x % 3 == 0 && loc.y % 3 == 0 && !Model.isNextToEC(loc))
       return;
     else {
       if (Robot.target == null || Robot.target.x % 3 != 0 || Robot.target.y % 3 != 0) {
@@ -30,7 +30,7 @@ public class Politician {
             int x = (lx + dx) * 3, y = (ly + dy) * 3;
             MapLocation candidate = new MapLocation(x, y);
             rc.setIndicatorDot(candidate, 255, 255, 255);
-            if (rc.canSenseLocation(candidate) && !rc.isLocationOccupied(candidate)) {
+            if (rc.canSenseLocation(candidate) && !rc.isLocationOccupied(candidate) && !Model.isNextToEC(candidate)) {
               int dist2 = candidate.distanceSquaredTo(loc);
               if (dist2 < mind) {
                 Robot.target = candidate;

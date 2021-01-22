@@ -49,6 +49,18 @@ public class Model {
     Model.rc = rc;
   }
 
+  public static boolean isNextToEC(MapLocation loc) throws GameActionException {
+    for (Direction dir : Direction.values()) {
+      MapLocation l = loc.add(dir);
+      if (rc.canSenseLocation(l)) {
+        RobotInfo r = rc.senseRobotAtLocation(l);
+        if (r != null && r.type == RobotType.ENLIGHTENMENT_CENTER && r.team == rc.getTeam())
+          return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * String operations only take 1 bytecode, no matter the string length (!). So
    * they can be used as fast hash maps.

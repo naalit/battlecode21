@@ -40,7 +40,7 @@ public class Robot {
       int prev_dist2 = loc.distanceSquaredTo(target);
       for (MapLocation i : options) {
         // Don't occupy EC spawning spaces
-        if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
+        if ((ec != null && i.isWithinDistanceSquared(ec, 2) && !loc.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
           continue;
 
         if (i.equals(target)) {
@@ -142,6 +142,10 @@ public class Robot {
   static int id;
   static double avg_sin = 0, avg_cos = 0;
   static boolean has_seen_enemy = false;
+  static Integer pol_min_x = null;
+  static Integer pol_max_x = null;
+  static Integer pol_min_y = null;
+  static Integer pol_max_y = null;
 
   static boolean has_reinforced = false;
   static MapLocation reinforce_loc = null;
@@ -219,6 +223,10 @@ public class Robot {
     friendly_slanderers.clear();
     total_fslan_conv = 0;
     muckraker = null;
+    pol_min_x = null;
+    pol_min_y = null;
+    pol_max_x = null;
+    pol_max_y = null;
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -260,6 +268,20 @@ public class Robot {
         if (Flag.isSlanderer(rc.getFlag(i.ID))) {
           friendly_slanderers.add(i);
           total_fslan_conv += i.conviction;
+        } else if (i.type == POLITICIAN) {
+          if (pol_min_x == null) {
+            pol_min_x = pol_max_x = iloc.x;
+            pol_min_y = pol_max_y = iloc.y;
+          } else {
+            if (iloc.x < pol_min_x)
+              pol_min_x = iloc.x;
+            if (iloc.x > pol_max_x)
+              pol_max_x = iloc.x;
+            if (iloc.y < pol_min_y)
+              pol_min_y = iloc.y;
+            if (iloc.y > pol_max_y)
+              pol_max_y = iloc.y;
+          }
         }
 
       } else if (i.type == ENLIGHTENMENT_CENTER) {

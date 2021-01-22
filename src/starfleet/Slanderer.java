@@ -25,6 +25,12 @@ public class Slanderer {
       rc.setIndicatorLine(rc.getLocation(), muck, 100, 0, 150);
       Direction dir = muck.directionTo(rc.getLocation());
       Robot.target = rc.adjacentLocation(dir).add(dir);
+      if (Robot.pol_min_x != null) {
+        rc.setIndicatorLine(rc.getLocation(), new MapLocation(Robot.pol_min_x, Robot.pol_min_y), 255, 255, 255);
+        rc.setIndicatorLine(rc.getLocation(), new MapLocation(Robot.pol_max_x, Robot.pol_max_y), 0, 0, 0);
+        Robot.target = new MapLocation(Math.max(Robot.pol_min_x, Math.min(Robot.pol_max_x, Robot.target.x)),
+            Math.max(Robot.pol_min_y, Math.min(Robot.pol_max_y, Robot.target.y)));
+      }
       Robot.targetMove(false);
     } else if (Robot.ec != null) {
       // Slanderers circle the EC, if they have one
