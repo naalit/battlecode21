@@ -86,6 +86,7 @@ public class ECenter {
   static class Spawn {
     RobotType type;
     int influence;
+
     Spawn(RobotType type, int influence) {
       this.type = type;
       this.influence = influence;
@@ -115,10 +116,14 @@ public class ECenter {
     if (nmuks < 2)
       return new Spawn(MUCKRAKER, spend > 500 ? 10 : 1);
 
-    if (!is_muckraker_nearby && cursor % 2 == 0)
+    // Stop spawning slanderers if the EC is surrounded by them already.
+    // This is useful when pols are dying faster than slanderers, so slanderers
+    // build up to the point where we can't defend them anymore.
+    if (!is_muckraker_nearby && nslans < 30 && cursor % 2 == 0)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    return new Spawn(POLITICIAN, (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 10)) : 17);
+    return new Spawn(POLITICIAN,
+        (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 10)) : 17);
   }
 
   static void spawn() throws GameActionException {
