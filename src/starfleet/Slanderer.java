@@ -19,15 +19,16 @@ public class Slanderer {
       Robot.reinforce_loc = null;
     }
     MapLocation muck = Model.updateMucks();
+    MapLocation loc = rc.getLocation();
 
     // Run away from enemy muckrakers
     if (muck != null) {
       rc.setIndicatorLine(rc.getLocation(), muck, 100, 0, 150);
-      Direction dir = muck.directionTo(rc.getLocation());
+      Direction dir = muck.directionTo(loc);
       Robot.target = rc.adjacentLocation(dir).add(dir);
-      if (Robot.pol_min_x != null) {
-        rc.setIndicatorLine(rc.getLocation(), new MapLocation(Robot.pol_min_x, Robot.pol_min_y), 255, 255, 255);
-        rc.setIndicatorLine(rc.getLocation(), new MapLocation(Robot.pol_max_x, Robot.pol_max_y), 0, 0, 0);
+      if (Robot.seen_pol) {
+        rc.setIndicatorLine(loc, new MapLocation(Robot.pol_min_x, Robot.pol_min_y), 255, 255, 255);
+        rc.setIndicatorLine(loc, new MapLocation(Robot.pol_max_x, Robot.pol_max_y), 0, 0, 0);
         Robot.target = new MapLocation(Math.max(Robot.pol_min_x, Math.min(Robot.pol_max_x, Robot.target.x)),
             Math.max(Robot.pol_min_y, Math.min(Robot.pol_max_y, Robot.target.y)));
       }

@@ -144,6 +144,7 @@ public class Robot {
   static int id;
   static double avg_sin = 0, avg_cos = 0;
   static boolean has_seen_enemy = false;
+  static boolean seen_pol = false;
   static Integer pol_min_x = null;
   static Integer pol_max_x = null;
   static Integer pol_min_y = null;
@@ -229,6 +230,17 @@ public class Robot {
     pol_min_y = null;
     pol_max_x = null;
     pol_max_y = null;
+    seen_pol = false;
+    // If we're close to an edge, allow slanderers to it
+    MapLocation loc = rc.getLocation();
+    if (Model.minX != null && Math.abs(loc.x - Model.minX) < 6)
+      pol_min_x = Model.minX;
+    if (Model.minY != null && Math.abs(loc.y - Model.minY) < 6)
+      pol_min_y = Model.minY;
+    if (Model.maxX != null && Math.abs(loc.x - Model.maxX) < 6)
+      pol_max_x = Model.maxX;
+    if (Model.maxY != null && Math.abs(loc.y - Model.maxY) < 6)
+      pol_max_y = Model.maxY;
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -271,19 +283,15 @@ public class Robot {
           friendly_slanderers.add(i);
           total_fslan_conv += i.conviction;
         } else if (i.type == POLITICIAN) {
-          if (pol_min_x == null) {
-            pol_min_x = pol_max_x = iloc.x;
-            pol_min_y = pol_max_y = iloc.y;
-          } else {
-            if (iloc.x < pol_min_x)
-              pol_min_x = iloc.x;
-            if (iloc.x > pol_max_x)
-              pol_max_x = iloc.x;
-            if (iloc.y < pol_min_y)
-              pol_min_y = iloc.y;
-            if (iloc.y > pol_max_y)
-              pol_max_y = iloc.y;
-          }
+          seen_pol = true;
+          if (pol_min_x == null || iloc.x < pol_min_x)
+            pol_min_x = iloc.x;
+          if (pol_max_x == null || iloc.x > pol_max_x)
+            pol_max_x = iloc.x;
+          if (pol_min_y == null || iloc.y < pol_min_y)
+            pol_min_y = iloc.y;
+          if (pol_max_y == null || iloc.y > pol_max_y)
+            pol_max_y = iloc.y;
         }
 
       } else if (i.type == ENLIGHTENMENT_CENTER) {
@@ -311,7 +319,6 @@ public class Robot {
 
     // Check for edges ourselves
     int sensor_radius = (int) Math.sqrt(rc.getType().sensorRadiusSquared);
-    MapLocation loc = rc.getLocation();
     if (Model.minX == null && !rc.onTheMap(loc.translate(-sensor_radius, 0))) {
       tryQueue(Model.findEdge(loc.translate(-sensor_radius, 0), 1, 0, false));
     }
