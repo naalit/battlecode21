@@ -79,10 +79,28 @@ public class ECenter {
   final static int[] slanderer_infs = { 949, 902, 855, 810, 766, 724, 683, 643, 605, 568, 532, 497, 463, 431, 399, 368,
       339, 310, 282, 255, 228, 203, 178, 154, 130, 107 };// , 85, 63, 41, 21 };
 
-  final static int[] pol_infs = { 25, 25, 50, 25, 25, 50, 25, 25, 200 };
   static int pol_inf_cursor = 0;
 
-  static int influenceFor(RobotType type) {
+  static int cursor = 0;
+
+  static class Spawn {
+    RobotType type;
+    int influence;
+    Spawn(RobotType type, int influence) {
+      this.type = type;
+      this.influence = influence;
+    }
+  }
+
+  static int slanInf(int spend) {
+    for (int i : slanderer_infs) {
+      if (spend >= i)
+        return i;
+    }
+    return 0;
+  }
+
+  static Spawn nextSpawn() {
     // Calculate the amount we're willing to spend this turn.
     // If there are enemies nearby, we don't want them to take our EC, so the amount
     // we want to keep in the EC is higher.
@@ -91,73 +109,30 @@ public class ECenter {
     int keep = Math.max(total_epol_conv + 1, 40);
     int spend = total - keep;
 
-    switch (type) {
-    case MUCKRAKER:
-      // There isn't much reason to spawn a muckraker with more than 1 influence,
-      // since it can still expose just as well
-      return 1;
-    case SLANDERER: {
-      for (int i : slanderer_infs) {
-        if (spend >= i)
-          return i;
-      }
-      // Returning 0 means canBuildRobot will always return false
-      return 0;
-    }
-    case POLITICIAN: {
-      ECInfo closest = null;
-      int closest_d = 100000;
-      for (ECInfo e : Model.neutral_ecs) {
-        if (e.loc.isWithinDistanceSquared(rc.getLocation(), closest_d)) {
-          closest = e;
-          closest_d = e.loc.distanceSquaredTo(rc.getLocation());
-        }
-      }
-      // Spawn a pol designed to take out this neutral EC, with >=1.5x EC inf
-      // TODO: tell it to target that EC
-      // spend >= inf * 3/2 ==> spend * 2 >= inf * 3
-      if (neutral_ec_changed && closest != null && spend * 2 >= closest.influence * 3) {
-        neutral_ec_changed = false;
-        return spend;
-      }
+    if (!is_muckraker_nearby && nslans == 0 && spend >= 107)
+      return new Spawn(SLANDERER, slanInf(spend));
 
-      if (spend >= 20 && pol_inf_cursor % 4 < 2)
-        return Math.min(spend, Math.max(200, rc.getConviction() / 10));
-      // else if (spend >= 50 && pol_inf_cursor % 4 < 3)
-      // return 50;
-      else if (spend >= 17)
-        return 17;
-      else
-        return 0;
-    }
-    default:
-      System.out.println("Not a spawnable type: " + type);
-      return 0;
-    }
-  }
+    if (nmuks < 2)
+      return new Spawn(MUCKRAKER, spend > 500 ? 10 : 1);
 
-  static RobotType[] types = { SLANDERER, MUCKRAKER, POLITICIAN, POLITICIAN };
-  static int cursor = 0;
+    if (!is_muckraker_nearby && cursor % 2 == 0)
+      return new Spawn(SLANDERER, slanInf(spend));
 
-  static RobotType nextType() {
-    RobotType next = types[cursor];
-    // Don't spawn slanderers if there are enemy muckrakers nearby
-    if (is_muckraker_nearby && next == SLANDERER)
-      return MUCKRAKER;
-    return next;
+    return new Spawn(POLITICIAN, (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 10)) : 17);
   }
 
   static void spawn() throws GameActionException {
-    RobotType type = nextType();
+    Spawn spawn = nextSpawn();
+    if (spawn == null)
+      return;
+
     Direction dir = openDirection();
-    int inf = influenceFor(type);
-    if (rc.canBuildRobot(type, dir, inf)) {
-      cursor++;
-      if (cursor >= types.length)
-        cursor = 0;
-      if (type == POLITICIAN)
+    if (rc.canBuildRobot(spawn.type, dir, spawn.influence)) {
+      if (spawn.type != MUCKRAKER)
+        cursor++;
+      if (spawn.type == POLITICIAN)
         pol_inf_cursor += 1;
-      rc.buildRobot(type, dir, inf);
+      rc.buildRobot(spawn.type, dir, spawn.influence);
       MapLocation l = rc.adjacentLocation(dir);
       addID(rc.senseRobotAtLocation(l).ID);
     }
