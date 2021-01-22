@@ -31,6 +31,7 @@ public class Robot {
       rc.setIndicatorLine(loc, target, 0, 255, 0);
 
       Direction dir = loc.directionTo(target);
+      boolean too_close = ec != null && loc.isWithinDistanceSquared(ec, 2);
 
       // Try going around obstacles, first left, then right
       MapLocation[] options = { loc.add(dir), loc.add(dir.rotateLeft()), loc.add(dir.rotateRight()),
@@ -40,13 +41,14 @@ public class Robot {
       int prev_dist2 = loc.distanceSquaredTo(target);
       for (MapLocation i : options) {
         // Don't occupy EC spawning spaces
-        if ((ec != null && i.isWithinDistanceSquared(ec, 2) && !loc.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
+        if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
           continue;
 
         if (i.equals(target)) {
           best = i;
           best_pass = 100;
-        } else if (rc.sensePassability(i) > best_pass && i.isWithinDistanceSquared(target, prev_dist2 - 1)) {
+        } else if (rc.sensePassability(i) > best_pass
+            && (too_close || i.isWithinDistanceSquared(target, prev_dist2 - 1))) {
           best = i;
           best_pass = rc.sensePassability(i);
         }

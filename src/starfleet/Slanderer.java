@@ -31,10 +31,14 @@ public class Slanderer {
         Robot.target = new MapLocation(Math.max(Robot.pol_min_x, Math.min(Robot.pol_max_x, Robot.target.x)),
             Math.max(Robot.pol_min_y, Math.min(Robot.pol_max_y, Robot.target.y)));
       }
+      // Don't crowd the EC when running from muckrakers
+      if (Robot.ec != null && Robot.target.isWithinDistanceSquared(Robot.ec, 9)) {
+        Robot.target = Robot.target.add(Robot.ec.directionTo(Robot.target));
+      }
       Robot.targetMove(false);
     } else if (Robot.ec != null) {
       // Slanderers circle the EC, if they have one
-      Robot.circleEC(3);
+      Robot.circleEC(4);
     } else {
       Robot.targetMove(true);
     }
