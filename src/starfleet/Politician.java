@@ -244,7 +244,7 @@ public class Politician {
     if (protectSlanderers() || tradeEmpower())
       return;
 
-    if (Robot.rturns < 5 && Robot.reinforce_loc != null
+    if (Robot.rpriority && Robot.reinforce_loc != null
         && Robot.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 49)) {
       Robot.target = Robot.reinforce_loc;
       Robot.targetMove(true);

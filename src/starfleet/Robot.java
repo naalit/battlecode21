@@ -129,7 +129,7 @@ public class Robot {
 
   static ArrayDeque<Flag> queue = new ArrayDeque<>();
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
-  
+
   /**
    * Keeps track of the total amount of conviction by friendly slanderers in
    * range, used to calculate average politician conviction.
@@ -164,12 +164,14 @@ public class Robot {
   static Integer pol_max_y = null;
 
   /**
-   * We keep the location of the last Reinforce message we got in `reinforce_loc`,
-   * and keep track of how long it's been since we received it. If we get a
-   * Reinforce2 message, we only override it if it's been 5 turns.
+   * We keep track of the location of the last muckraker message we got in
+   * `reinforce_loc`, whether it was high priority (= there's a slanderer nearby),
+   * and how long it's been since we received it. We only override high priority
+   * messages with low priority ones if it's been 5 turns.
    */
   static MapLocation reinforce_loc = null;
   static int rturns = 5;
+  static boolean rpriority = false;
 
   /**
    * Stores the closest muckraker to this unit.
@@ -182,11 +184,13 @@ public class Robot {
   static MapLocation cvt_loc = null;
 
   /**
-   * Puts nearby units into `nearby`, reads flags, updates the list of enemy
-   * ECs, etc.
+   * Puts nearby units into `nearby`, reads flags, updates the list of enemy ECs,
+   * etc.
    */
   public static void updateComms() throws GameActionException {
     rturns++;
+    if (rturns > 5)
+      rpriority = false;
     int start_round = rc.getRoundNum();
 
     if (ec_id != null) {
@@ -220,12 +224,11 @@ public class Robot {
           Model.enemy_ecs.remove(ecif);
           break;
         }
-        case Reinforce:
-          rturns = 0;
-          reinforce_loc = flag.loc;
-          break;
-        case Reinforce2:
-          if (rturns >= 5) {
+        case Muckraker:
+        case Muckraker2:
+          if (rturns >= 5 || flag.aux_flag || !rpriority) {
+            rturns = 0;
+            rpriority = flag.aux_flag;
             reinforce_loc = flag.loc;
           }
           break;
@@ -374,7 +377,7 @@ public class Robot {
     // Tell the EC about nearby muckrakers
     if (muckraker != null) {
       scary_muk = true;
-      rc.setFlag(new Flag(Flag.Type.Reinforce, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muckraker)
+      rc.setFlag(new Flag(Flag.Type.Muckraker, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muckraker)
           .encode(ec, rc.getType() == SLANDERER));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
@@ -402,7 +405,7 @@ public class Robot {
         ec_id = pending_id;
         break;
       case None:
-      case Reinforce:
+      case Muckraker:
         break;
       default:
         counter = 0;

@@ -82,14 +82,15 @@ public class Flag {
      */
     HelloEC,
     /**
-     * Robot: A robot is telling its home EC that there's a muckraker nearby scaring
-     * a slanderer. EC: We're calling for (politician) reinforcements at a location.
+     * There's a muckraker at a location, and the aux flag tells whether there's a
+     * nearby slanderer or not.
      */
-    Reinforce,
+    Muckraker,
     /**
-     * EC: Another EC is calling for reinforcements at a location.
+     * The same as Muckraker, but we're copying it from another EC, so further ECs
+     * shouldn't copy it from us.
      */
-    Reinforce2,
+    Muckraker2,
     /**
      * We found an edge, and enclose its location and, in the aux flag, whether it's
      * a Y edge.
@@ -121,9 +122,9 @@ public class Flag {
       case 5:
         return HelloEC;
       case 6:
-        return Reinforce;
+        return Muckraker;
       case 7:
-        return Reinforce2;
+        return Muckraker2;
       case 8:
         return Edge;
       case 9:
@@ -149,9 +150,9 @@ public class Flag {
         return 4;
       case HelloEC:
         return 5;
-      case Reinforce:
+      case Muckraker:
         return 6;
-      case Reinforce2:
+      case Muckraker2:
         return 7;
       case Edge:
         return 8;

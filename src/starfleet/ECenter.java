@@ -201,9 +201,9 @@ public class ECenter {
     }
   }
 
-  /*
-   * TODO: switch from weird messaging with Reinforce and Reinforce2 to actual
-   * messages for reporting slanderers
+  /**
+   * Whether the `reinforce` or `reinforce2` messages we have had slanderers
+   * nearby them when they were sent
    */
   static boolean rpriority = false;
 
@@ -238,16 +238,12 @@ public class ECenter {
       break;
 
     // If a slanderer is scared, ask for reinforcements
-    case Reinforce:
-      if ((flag.aux_flag || !rpriority) && (reinforce == null
+    case Muckraker:
+      if ((flag.aux_flag || !rpriority) && ((flag.aux_flag && !rpriority) || reinforce == null
           || flag.loc.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
         if (Model.addMuck(flag.loc)) {
-          if (flag.aux_flag) {
-            reinforce = flag.loc;
-            rpriority = flag.aux_flag;
-          } else {
-            reinforce2 = flag.loc;
-          }
+          reinforce = flag.loc;
+          rpriority = flag.aux_flag;
         }
       break;
 
@@ -256,7 +252,7 @@ public class ECenter {
       return flag.id != rc.getID();
 
     // These aren't possible for a robot
-    case Reinforce2:
+    case Muckraker2:
     case MyLocationX:
     case MyLocationY:
     case None:
@@ -360,13 +356,16 @@ public class ECenter {
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
               }
               break;
-            case Reinforce:
+            case Muckraker:
               if (reinforce2 == null
                   || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation())))
-                if (Model.addMuck(f.loc))
+                if (Model.addMuck(f.loc)) {
                   reinforce2 = f.loc;
+                  if (!rpriority)
+                    rpriority = f.aux_flag;
+                }
               break;
-            case Reinforce2:
+            case Muckraker2:
             case HelloEC:
             case None:
               break;
@@ -407,15 +406,16 @@ public class ECenter {
 
   static Flag nextFlag() throws GameActionException {
     if (reinforce != null) {
-      Flag flag = new Flag(Flag.Type.Reinforce, reinforce);
+      Flag flag = new Flag(Flag.Type.Muckraker, rpriority, reinforce);
       rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
       rpriority = false;
       reinforce = null;
       reinforce2 = null;
       return flag;
     } else if (reinforce2 != null) {
-      Flag flag = new Flag(Flag.Type.Reinforce2, reinforce2);
+      Flag flag = new Flag(Flag.Type.Muckraker2, rpriority, reinforce2);
       rc.setIndicatorLine(rc.getLocation(), reinforce2, 0, 127, 255);
+      rpriority = false;
       reinforce2 = null;
       return flag;
     }
