@@ -129,6 +129,7 @@ public class Robot {
 
   static ArrayDeque<Flag> queue = new ArrayDeque<>();
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
+  
   /**
    * Keeps track of the total amount of conviction by friendly slanderers in
    * range, used to calculate average politician conviction.
@@ -136,29 +137,53 @@ public class Robot {
   public static int total_fslan_conv = 0;
   static Team team;
   static RobotInfo[] nearby = {};
+
+  /**
+   * Our home EC's location and ID.
+   */
   static MapLocation ec;
   static Integer ec_id;
+
+  /**
+   * When we see a new EC, we switch to that as home EC, but first we need to tell
+   * our old home EC about it. While we're doing that, we keep the new EC's
+   * location and ID in these `pending_*` variables.
+   */
   static MapLocation pending_ec;
   static Integer pending_id;
-  static boolean was_empty = true;
-  static int id;
-  static double avg_sin = 0, avg_cos = 0;
-  static boolean has_seen_enemy = false;
+
+  /**
+   * Slanderers keep track of where nearby pols are, so they don't go too far
+   * away. We populate pol_min_x etc. with edges if we're close enough, so we also
+   * have seen_pol to keep track of whether we've seen any politicians at all.
+   */
   static boolean seen_pol = false;
   static Integer pol_min_x = null;
   static Integer pol_max_x = null;
   static Integer pol_min_y = null;
   static Integer pol_max_y = null;
 
-  static boolean has_reinforced = false;
+  /**
+   * We keep the location of the last Reinforce message we got in `reinforce_loc`,
+   * and keep track of how long it's been since we received it. If we get a
+   * Reinforce2 message, we only override it if it's been 5 turns.
+   */
   static MapLocation reinforce_loc = null;
   static int rturns = 5;
+
+  /**
+   * Stores the closest muckraker to this unit.
+   */
   static MapLocation muckraker = null;
+  /**
+   * When we hear about a neutral or enemy EC converting to friendly, we store it
+   * here so that politicians can go there and defend it.
+   */
   static MapLocation cvt_loc = null;
 
   /**
-   * Puts nearby units into `nearby`, reads flags, and updates the list of enemy
-   * ECs.
+   * Puts nearby units into `nearby`, reads flags, updates the list of enemy
+   * ECs, etc.
    */
   public static void updateComms() throws GameActionException {
     rturns++;
@@ -198,12 +223,10 @@ public class Robot {
         case Reinforce:
           rturns = 0;
           reinforce_loc = flag.loc;
-          has_reinforced = true;
           break;
         case Reinforce2:
           if (rturns >= 5) {
             reinforce_loc = flag.loc;
-            has_reinforced = true;
           }
           break;
 
@@ -348,16 +371,16 @@ public class Robot {
     if (ec == null)
       return;
 
-    // If we're a slanderer, tell the EC about nearby muckrakers
-    if (muckraker != null) {// } && (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty())) {
+    // Tell the EC about nearby muckrakers
+    if (muckraker != null) {
       scary_muk = true;
       rc.setFlag(new Flag(Flag.Type.Reinforce, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muckraker)
           .encode(ec, rc.getType() == SLANDERER));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
-    }
-
-    if (scary_muk) {
+    } else if (scary_muk) {
+      // If we're currently showing a flag reporting a nearby muck, but it's gone, get
+      // rid of the flag
       scary_muk = false;
       rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }

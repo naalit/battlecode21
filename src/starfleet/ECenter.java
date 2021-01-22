@@ -5,16 +5,6 @@ import battlecode.common.*;
 import static battlecode.common.RobotType.*;
 import static battlecode.common.Direction.*;
 
-class NeutralEC {
-  int influence;
-  MapLocation loc;
-
-  NeutralEC(MapLocation loc, int influence) {
-    this.loc = loc;
-    this.influence = influence;
-  }
-}
-
 public class ECenter {
   static RobotController rc;
 
@@ -52,18 +42,12 @@ public class ECenter {
   // -- SPAWNING -- //
 
   static final Direction[] directions = { NORTH, SOUTH, WEST, EAST, NORTHWEST, SOUTHEAST, NORTHEAST, SOUTHWEST };
-  static int dir_cursor = -1;
 
   /**
    * Returns the next direction where we can spawn something.
    */
   static Direction openDirection() throws GameActionException {
-    for (Direction dir : directions) {// int i = 0; i < directions.length; i++) {
-      // dir_cursor++;
-      // if (dir_cursor >= directions.length) {
-      // dir_cursor = 0;
-      // }
-      // Direction dir = directions[dir_cursor];
+    for (Direction dir : directions) {
       MapLocation l = rc.getLocation().add(dir);
       if (rc.onTheMap(l) && !rc.isLocationOccupied(l))
         return dir;
@@ -145,14 +129,34 @@ public class ECenter {
 
   // -- COMMUNICATION -- //
 
+  /**
+   * The IDs of every unit this EC has spawned are kept in this list. `nempty`
+   * stores the number of empty spots on the list, `firstempty` the index of the
+   * first empty one, and `endidx` the index after which all slots are empty. If
+   * `firstempty == endidx`, there could also be empty slots before that.
+   */
   static int[] ids = new int[300];
   static int nempty = 300;
   static int firstempty = 0;
   static int endidx = 0;
 
   static RobotInfo[] nearby;
+  /**
+   * Stores the total conviction held by enemy politicians within sensing range,
+   * so that we can make sure the EC conviction doesn't go below that number and
+   * let us get taken over easily.
+   */
   static int total_epol_conv = 0;
+  /**
+   * Stores whether there's an enemy muckraker nearby, in which case we shouldn't
+   * spawn slanderers.
+   */
   static boolean is_muckraker_nearby = false;
+
+  /**
+   * These store the number of friendly units of each type within sensing range of
+   * the EC, for deciding what to spawn.
+   */
   static int npols = 0;
   static int nslans = 0;
   static int nmuks = 0;
@@ -197,6 +201,10 @@ public class ECenter {
     }
   }
 
+  /*
+   * TODO: switch from weird messaging with Reinforce and Reinforce2 to actual
+   * messages for reporting slanderers
+   */
   static boolean rpriority = false;
 
   /**
@@ -257,10 +265,14 @@ public class ECenter {
     return true;
   }
 
+  /**
+   * We don't have time to go through the whole IDs list each turn, so we store
+   * the index where we left of last time and start from there.
+   */
   static int left_off = 0;
 
   static void updateDistantFlags() {
-    // Bytecode costs:
+    // Bytecode costs (per loop):
     // For a known-dead unit: 11
     // For a newly-dead unit: 20 (I'm pretty sure getFlag throwing doesn't count)
     // For an alive unit: 20+5
@@ -380,10 +392,12 @@ public class ECenter {
    * 0: sending x, 1: sending y, 2: done.
    */
   static int loc_send_stage = 0;
+  /**
+   * These all describe things we need to send, instead of using a queue like
+   * Robot does. We reset most of them when we've sent everything, so we
+   * constantly repeat all the information we know.
+   */
   static MapLocation cvt_pending = null;
-
-  static boolean neutral_ec_changed = false;
-
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
   static int neutral_ec_cursor = 0;
@@ -450,6 +464,7 @@ public class ECenter {
     } else if (Model.minY != null && edge_cursor <= 3) {
       return new Flag(Flag.Type.Edge, true, new MapLocation(loc.x, Model.minY));
     } else {
+      // Reset all the cursors
       friendly_ec_cursor = 0;
       neutral_ec_cursor = 0;
       enemy_ec_cursor = 0;
