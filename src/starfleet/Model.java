@@ -61,49 +61,44 @@ public class Model {
     return false;
   }
 
-  /**
-   * String operations only take 1 bytecode, no matter the string length (!). So
-   * they can be used as fast hash maps.
-   *
-   * Format: "loc:turn_seen;", e.g. "23,14:141;54,92:939;"
-   */
-  static StringBuilder mucks = new StringBuilder("");
+  static ArrayList<Pair<MapLocation, Integer>> mucks = new ArrayList<>();
 
   static MapLocation updateMucks() {
+    MapLocation loc = rc.getLocation();
     int closest_d = 100000;
     MapLocation closest = null;
-    for (int i = 0; i < mucks.length();) {
-      int comma = mucks.indexOf(",", i);
-      int x = Integer.parseInt(mucks.substring(i, comma));
-      int colon = mucks.indexOf(":", i);
-      int y = Integer.parseInt(mucks.substring(comma + 1, colon));
-      int end = mucks.indexOf(";", i);
-      int turn = Integer.parseInt(mucks.substring(colon + 1, end));
-      if (rc.getRoundNum() - turn > 5)
-        mucks.delete(i, end + 1);
-      else {
-        MapLocation loc = new MapLocation(x, y);
-        if (rc.getLocation().isWithinDistanceSquared(loc, closest_d)) {
-          closest_d = rc.getLocation().distanceSquaredTo(loc);
-          closest = loc;
+    for (int i = 0; i < mucks.size(); i++) {
+      Pair<MapLocation, Integer> m = mucks.get(i);
+      if (rc.getRoundNum() - m.snd > 5) {
+        mucks.remove(i);
+        i--;
+      } else {
+        int dist2 = m.fst.distanceSquaredTo(loc);
+        if (dist2 < closest_d) {
+          closest = m.fst;
+          closest_d = dist2;
         }
-        i = end + 1;
       }
     }
+
     return closest;
   }
 
   static boolean addMuck(MapLocation muck) {
-    String key = muck.x + "," + muck.y + ":";
-    int idx = mucks.indexOf(key);
-    if (idx != -1) {
+    if (mucks.stream().anyMatch(x -> x.fst.equals(muck)))
       return false;
-    } else {
-      mucks.append(key);
-      mucks.append(rc.getRoundNum());
-      mucks.append(';');
-      return true;
+
+    mucks.add(new Pair<>(muck, rc.getRoundNum()));
+    return true;
+  }
+
+  static MapLocation muck_epicenter() {
+    int tx = 0, ty = 0;
+    for (Pair<MapLocation, Integer> p : mucks) {
+      tx += p.fst.x;
+      ty += p.fst.y;
     }
+    return new MapLocation(tx / mucks.size(), ty / mucks.size());
   }
 
   /**
