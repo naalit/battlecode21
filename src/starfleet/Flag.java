@@ -76,11 +76,10 @@ public class Flag {
      */
     ConvertF,
     /**
-     * A message meant to be read by a friendly EC in range, attaching this robot's
-     * home EC's ID. It causes the sending unit to switch home ECs to the one in
-     * range.
+     * A message meant to be read by a friendly EC in range, identified by its ID.
+     * That EC should take control of this unit.
      */
-    HelloEC,
+    AdoptMe,
     /**
      * There's a muckraker at a location, and the aux flag tells whether there's a
      * nearby slanderer or not.
@@ -120,7 +119,7 @@ public class Flag {
       case 4:
         return ConvertF;
       case 5:
-        return HelloEC;
+        return AdoptMe;
       case 6:
         return Muckraker;
       case 7:
@@ -148,7 +147,7 @@ public class Flag {
         return 3;
       case ConvertF:
         return 4;
-      case HelloEC:
+      case AdoptMe:
         return 5;
       case Muckraker:
         return 6;
@@ -167,7 +166,7 @@ public class Flag {
     public boolean hasID() {
       switch (this) {
       case FriendlyEC:
-      case HelloEC:
+      case AdoptMe:
       case MyLocationX:
       case MyLocationY:
         return true;

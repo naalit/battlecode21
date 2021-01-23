@@ -236,7 +236,7 @@ public class Robot {
         // As a robot, we know our home EC's location already
         case MyLocationX:
         case MyLocationY:
-        case HelloEC:
+        case AdoptMe:
         case None:
           break;
         }
@@ -293,7 +293,7 @@ public class Robot {
             ec = iloc;
             ec_id = i.ID;
           } else if (ec_id != i.ID) {
-            queue.add(new Flag(Flag.Type.HelloEC, ec_id));
+            queue.add(new Flag(Flag.Type.AdoptMe, i.ID));
             pending_ec = iloc;
             pending_id = i.ID;
             cvt_loc = null;
@@ -399,8 +399,8 @@ public class Robot {
       Flag next = queue.remove();
 
       switch (next.type) {
-      case HelloEC:
-        if (!pending_ec.isWithinDistanceSquared(rc.getLocation(), ENLIGHTENMENT_CENTER.sensorRadiusSquared)) {
+      case AdoptMe:
+        if (pending_id != next.id || !pending_ec.isWithinDistanceSquared(rc.getLocation(), ENLIGHTENMENT_CENTER.sensorRadiusSquared)) {
           return;
         }
         ec = pending_ec;

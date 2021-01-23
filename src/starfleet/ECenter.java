@@ -139,6 +139,7 @@ public class ECenter {
   static int nempty = 300;
   static int firstempty = 0;
   static int endidx = 0;
+  static StringSet id_set = new StringSet();
 
   static RobotInfo[] nearby;
   /**
@@ -162,6 +163,10 @@ public class ECenter {
   static int nmuks = 0;
 
   static void addID(int id) {
+    // Don't add it if it's already there
+    if (!id_set.add(Integer.toString(id)))
+      return;
+
     int len = ids.length;
     if (endidx < len) {
       if (firstempty == endidx)
@@ -247,9 +252,9 @@ public class ECenter {
         }
       break;
 
-    // Remove the unit if it's saying goodbye to us
-    case HelloEC:
-      return flag.id != rc.getID();
+    // Remove the unit if it's being adopted by another EC
+    case AdoptMe:
+      return flag.id == rc.getID();
 
     // These aren't possible for a robot
     case Muckraker2:
@@ -286,12 +291,14 @@ public class ECenter {
           int flag = rc.getFlag(id);
           if ((flag & Flag.HEADER_MASK) != 0) {
             if (!processFlag(flag)) {
+              id_set.remove(Integer.toString(ids[i]));
               nempty++;
               ids[i] = 0;
             }
           }
         } catch (GameActionException e) {
           // The unit is dead, so add that
+          id_set.remove(Integer.toString(ids[i]));
           nempty++;
           ids[i] = 0;
         }
@@ -366,7 +373,7 @@ public class ECenter {
                 }
               break;
             case Muckraker2:
-            case HelloEC:
+            case AdoptMe:
             case None:
               break;
             }
@@ -516,12 +523,11 @@ public class ECenter {
         // Read the flag; we only care if it's HelloEC, otherwise we'll see it anyway
         int flag = rc.getFlag(i.ID);
         switch (Flag.getType(flag)) {
-        case HelloEC:
+        case AdoptMe:
           Flag f = Flag.decode(null, flag);
-          if (f.id != rc.getID()) {
+          if (f.id == rc.getID()) {
             rc.setIndicatorLine(rc.getLocation(), i.location, 128, 128, 0);
             Model.addFriendlyEC(new ECInfo(f.id));
-            // FIXME: this gets added multiple times
             addID(i.ID);
           }
           break;
