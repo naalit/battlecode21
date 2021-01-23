@@ -97,7 +97,9 @@ public class Politician {
     }
 
     // Calculate total damage done for each possible radius
-    int useful_conv = (int) (rc.getConviction() * rc.getEmpowerFactor(rc.getTeam(), 0)) - 10;
+    int useful_conv = rc.getConviction() - 10;
+    // (int) (rc.getConviction() * rc.getEmpowerFactor(rc.getTeam(), 0)) - 10;
+    double buff = rc.getEmpowerFactor(team, 0);
     int[] totals = { 0, 0, 0, 0 };
     boolean[] hits_enemy = { false, false, false, false };
     for (RobotInfo i : affected) {
@@ -111,16 +113,36 @@ public class Politician {
         int r2 = radii[r];
         if (dist2 <= r2) {
           hits_enemy[r] |= i.team != team;
-          // Sometimes units end up with 0 conviction, but still need to be hit
-          // Also, we assume remainder damage (if rcounts[r] > useful_conv) is given to
-          // everyone, not in the order it actually is, for efficiency
-          totals[r] += Math.max(1, Math.min(useful_conv / rcounts[r],
-              // We can contribute as much as we want to friendly ECs, and extra damage done
-              // to enemy ECs rolls over into when it's friendly
-              (i.type == ENLIGHTENMENT_CENTER) ? 100000000 :
+          double conv = ((double) useful_conv) / rcounts[r];
+          if (i.type == ENLIGHTENMENT_CENTER) {
+            if (i.team == team) {
+              // No buff to friendly ECs
+              totals[r] += (int) conv;
+            } else {
+              // Complicated stuff
+              double conv_to_convert = i.conviction / buff;
+              if (conv <= conv_to_convert) {
+                totals[r] += (int) (conv * buff);
+              } else {
+                // Enough to convert
+                totals[r] += i.conviction;
+                // Plus the rest, non-buffed
+                totals[r] += (int) (conv - conv_to_convert);
+              }
+            }
+          } else {
+            // Full buff
+            if (i.team == team) {
               // Our units can only heal upto their cap
-                  (i.team == team ? i.influence - i.conviction
-                      : (i.type == MUCKRAKER ? Math.max(3, i.conviction) : i.conviction))));
+              totals[r] += Math.min(conv * buff, i.influence - i.conviction);
+            } else {
+              // If it's a politician, we can kill it then heal it; otherwise, we can just
+              // kill it. Also, sometimes conviction is 0, but the unit can still be killed.
+              // Last, we want it to be worth it for 17hp pols to kill 2 1hp muckrakers.
+              totals[r] += Math.min(conv * buff, i.type == POLITICIAN ? i.influence + i.conviction
+                  : Math.max(i.type == MUCKRAKER ? 3 : 1, i.conviction));
+            }
+          }
         }
       }
     }
@@ -143,8 +165,8 @@ public class Politician {
     // or if there are a ton of politicians around and this one is at or below
     // average, so its life isn't worth much
     int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
-    if (((rc.getConviction() - 10) * 2 <= 3 * max_damage
-        || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv)) && rc.canEmpower(max_r2)) {
+    if ((useful_conv * 2 <= 3 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
+        && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return true;
     } else {
