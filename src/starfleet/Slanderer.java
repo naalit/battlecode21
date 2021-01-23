@@ -36,6 +36,11 @@ public class Slanderer {
       if (Robot.ec != null && Robot.target.isWithinDistanceSquared(Robot.ec, 9)) {
         Robot.target = Robot.target.add(Robot.ec.directionTo(Robot.target));
       }
+      // Priority number 1 is to not go towards the muck, even if we might be in a
+      // suboptimal location
+      while (Robot.target.isWithinDistanceSquared(muck, RobotType.MUCKRAKER.actionRadiusSquared)) {
+        Robot.target = Robot.target.add(muck.directionTo(Robot.target));
+      }
       Robot.targetMove(false);
     } else if (Robot.ec != null) {
       // Slanderers circle the EC, if they have one
