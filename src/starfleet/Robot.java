@@ -397,10 +397,12 @@ public class Robot {
 
     if (!queue.isEmpty()) {
       Flag next = queue.remove();
-      rc.setFlag(next.encode(ec, rc.getType() == SLANDERER));
 
       switch (next.type) {
       case HelloEC:
+        if (!pending_ec.isWithinDistanceSquared(rc.getLocation(), ENLIGHTENMENT_CENTER.sensorRadiusSquared)) {
+          return;
+        }
         ec = pending_ec;
         ec_id = pending_id;
         break;
@@ -410,6 +412,8 @@ public class Robot {
       default:
         counter = 0;
       }
+
+      rc.setFlag(next.encode(ec, rc.getType() == SLANDERER));
     } else {
       rc.setFlag(new Flag(Flag.Type.None).encode(ec, rc.getType() == SLANDERER));
     }

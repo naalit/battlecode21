@@ -518,8 +518,12 @@ public class ECenter {
         switch (Flag.getType(flag)) {
         case HelloEC:
           Flag f = Flag.decode(null, flag);
-          Model.addFriendlyEC(new ECInfo(f.id));
-          addID(i.ID);
+          if (f.id != rc.getID()) {
+            rc.setIndicatorLine(rc.getLocation(), i.location, 128, 128, 0);
+            Model.addFriendlyEC(new ECInfo(f.id));
+            // FIXME: this gets added multiple times
+            addID(i.ID);
+          }
           break;
         default:
           break;
