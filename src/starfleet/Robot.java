@@ -130,11 +130,6 @@ public class Robot {
   static ArrayDeque<Flag> queue = new ArrayDeque<>();
   public static ArrayList<RobotInfo> friendly_slanderers = new ArrayList<>(20);
 
-  /**
-   * Keeps track of the total amount of conviction by friendly slanderers in
-   * range, used to calculate average politician conviction.
-   */
-  public static int total_fslan_conv = 0;
   static Team team;
   static RobotInfo[] nearby = {};
 
@@ -182,6 +177,7 @@ public class Robot {
    * here so that politicians can go there and defend it.
    */
   static MapLocation cvt_loc = null;
+  static boolean ec_noticed_wrong_sym = false;
 
   /**
    * Puts nearby units into `nearby`, reads flags, updates the list of enemy ECs,
@@ -200,6 +196,8 @@ public class Robot {
         switch (flag.type) {
         case EnemyEC: {
           ECInfo ecif = new ECInfo(flag.loc);
+          ecif.guessed = !flag.aux_flag;
+          Model.friendly_ecs.remove(ecif);
           Model.neutral_ecs.remove(ecif);
           Model.addEnemyEC(ecif);
           break;
@@ -233,10 +231,16 @@ public class Robot {
           }
           break;
 
+        case WrongSymmetry:
+          ec_noticed_wrong_sym = true;
+          Model.wrongSymmetry(Symmetry.decode(flag.id), false);
+          break;
+
         // As a robot, we know our home EC's location already
         case MyLocationX:
         case MyLocationY:
         case AdoptMe:
+        case EnemyCenter:
         case None:
           break;
         }
@@ -250,7 +254,6 @@ public class Robot {
     // Sense nearby robots and store them in `nearby`
     nearby = rc.senseNearbyRobots();
     friendly_slanderers.clear();
-    total_fslan_conv = 0;
     muckraker = null;
     pol_min_x = null;
     pol_min_y = null;
@@ -259,14 +262,14 @@ public class Robot {
     seen_pol = false;
     // If we're close to an edge, allow slanderers to it
     MapLocation loc = rc.getLocation();
-    if (Model.minX != null && Math.abs(loc.x - Model.minX) < 6)
-      pol_min_x = Model.minX;
-    if (Model.minY != null && Math.abs(loc.y - Model.minY) < 6)
-      pol_min_y = Model.minY;
-    if (Model.maxX != null && Math.abs(loc.x - Model.maxX) < 6)
-      pol_max_x = Model.maxX;
-    if (Model.maxY != null && Math.abs(loc.y - Model.maxY) < 6)
-      pol_max_y = Model.maxY;
+    // if (Model.minX != null && Math.abs(loc.x - Model.minX) < 6)
+    // pol_min_x = Model.minX;
+    // if (Model.minY != null && Math.abs(loc.y - Model.minY) < 6)
+    // pol_min_y = Model.minY;
+    // if (Model.maxX != null && Math.abs(loc.x - Model.maxX) < 6)
+    // pol_max_x = Model.maxX;
+    // if (Model.maxY != null && Math.abs(loc.y - Model.maxY) < 6)
+    // pol_max_y = Model.maxY;
 
     for (RobotInfo i : nearby) {
       MapLocation iloc = i.location;
@@ -307,7 +310,6 @@ public class Robot {
 
         if (Flag.isSlanderer(rc.getFlag(i.ID))) {
           friendly_slanderers.add(i);
-          total_fslan_conv += i.conviction;
         } else if (i.type == POLITICIAN) {
           seen_pol = true;
           if (pol_min_x == null || iloc.x < pol_min_x)
@@ -326,9 +328,10 @@ public class Robot {
 
         if (i.team == team.opponent()) {
           // It's an enemy EC
+          Model.friendly_ecs.remove(ecif);
           Model.neutral_ecs.remove(ecif);
           if (Model.addEnemyEC(ecif)) {
-            queue.add(new Flag(Flag.Type.EnemyEC, iloc));
+            queue.add(new Flag(Flag.Type.EnemyEC, true, iloc));
           }
         } else {
           // It's a neutral EC
@@ -340,6 +343,22 @@ public class Robot {
         if (muckraker == null
             || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
           muckraker = i.location;
+      }
+    }
+
+    // Check if we can confirm or deny guessed ECs in range
+    for (ECInfo i : Model.enemy_ecs) {
+      if (i.guessed) {
+        if (rc.canSenseLocation(i.loc)) {
+          RobotInfo r = rc.senseRobotAtLocation(i.loc);
+          // If it *is* an EC, we already found it and reported it above
+          if (r == null || r.type != ENLIGHTENMENT_CENTER) {
+            Model.wrongSymmetry(null, false);
+            queue.add(new Flag(Flag.Type.WrongSymmetry, 0));
+            ec_noticed_wrong_sym = false;
+            break;
+          }
+        }
       }
     }
 
@@ -400,15 +419,24 @@ public class Robot {
 
       switch (next.type) {
       case AdoptMe:
-        if (pending_id != next.id || !pending_ec.isWithinDistanceSquared(rc.getLocation(), ENLIGHTENMENT_CENTER.sensorRadiusSquared)) {
+        if (pending_id != next.id
+            || !pending_ec.isWithinDistanceSquared(rc.getLocation(), ENLIGHTENMENT_CENTER.sensorRadiusSquared)) {
           return;
         }
         ec = pending_ec;
         ec_id = pending_id;
+        // Get rid of the symmetry the old EC thought so we don't tell the new one it's
+        // wrong
+        Model.wrongSymmetry(null, false);
         break;
       case None:
       case Muckraker:
         break;
+
+      case WrongSymmetry:
+        if (ec_noticed_wrong_sym)
+          return;
+        System.out.println("Wrong symmetry for EC " + ec_id);
       default:
         counter = 0;
       }

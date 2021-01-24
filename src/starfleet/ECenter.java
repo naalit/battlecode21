@@ -8,6 +8,8 @@ import static battlecode.common.Direction.*;
 public class ECenter {
   static RobotController rc;
 
+  static int last_inf = 150;
+  static int income = 0;
   static int last_votes;
   static boolean bid_last_round = false;
   // We start by bidding 1, and then if we lose, we increment our bid by 1
@@ -61,7 +63,7 @@ public class ECenter {
    * only pick the lowest starting influence in each income bracket
    */
   final static int[] slanderer_infs = { 949, 902, 855, 810, 766, 724, 683, 643, 605, 568, 532, 497, 463, 431, 399, 368,
-      339, 310, 282, 255, 228, 203, 178, 154, 130, 107 };// , 85, 63, 41, 21 };
+      339, 310, 282, 255, 228, 203, 178, 154, 130, 107, 85, 63, 41 };// , 21 };
 
   static int pol_inf_cursor = 0;
 
@@ -85,29 +87,34 @@ public class ECenter {
     return 0;
   }
 
+  static boolean pol_before_slan = true;
+
   static Spawn nextSpawn() {
     // Calculate the amount we're willing to spend this turn.
     // If there are enemies nearby, we don't want them to take our EC, so the amount
     // we want to keep in the EC is higher.
     int total = rc.getInfluence();
     // Keep enough so that we won't die to all the enemy pols blowing up
-    int keep = Math.max(total_epol_conv + 1, 40);
+    int keep = Math.max(total_epol_conv + 1, 10);
     int spend = total - keep;
 
     if (!is_muckraker_nearby && nslans == 0 && spend >= 107)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    if (nmuks < 2)
+    if (nmuks < 2 || (pol_before_slan && spend < 41))
       return new Spawn(MUCKRAKER, spend > 500 ? 10 : 1);
 
     // Stop spawning slanderers if the EC is surrounded by them already.
     // This is useful when pols are dying faster than slanderers, so slanderers
     // build up to the point where we can't defend them anymore.
-    if (!is_muckraker_nearby && nslans < 30 && cursor % 2 == 0)
+    if (!is_muckraker_nearby /* && nslans < 30 */ && pol_before_slan)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    return new Spawn(POLITICIAN,
-        (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 10)) : 17);
+    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4)) : 17;
+    if (pol_before_slan && total - pol_inf + income * 2 < 51)
+      return new Spawn(MUCKRAKER, 1);
+
+    return new Spawn(POLITICIAN, pol_inf);
   }
 
   static void spawn() throws GameActionException {
@@ -117,10 +124,12 @@ public class ECenter {
 
     Direction dir = openDirection();
     if (rc.canBuildRobot(spawn.type, dir, spawn.influence)) {
-      if (spawn.type != MUCKRAKER)
-        cursor++;
-      if (spawn.type == POLITICIAN)
+      if (spawn.type == SLANDERER)
+        pol_before_slan = false;
+      else if (spawn.type == POLITICIAN) {
+        pol_before_slan = true;
         pol_inf_cursor += 1;
+      }
       rc.buildRobot(spawn.type, dir, spawn.influence);
       MapLocation l = rc.adjacentLocation(dir);
       addID(rc.senseRobotAtLocation(l).ID);
@@ -211,6 +220,16 @@ public class ECenter {
    * nearby them when they were sent
    */
   static boolean rpriority = false;
+  /**
+   * If we just reset symmetry, this stores the wrong value so we can send it out
+   */
+  static Symmetry wrong_one = null;
+  /**
+   * Since robots may keep flags up for more than one turn, we have a small grace
+   * period after resetting symmetry before we accept new reports of wrong
+   * symmetry.
+   */
+  static int wrong_sym_counter = 5;
 
   /**
    * Returns whether to keep the unit sending the flag
@@ -227,6 +246,7 @@ public class ECenter {
       break;
     case EnemyEC: {
       ECInfo ecif = new ECInfo(flag.loc);
+      ecif.guessed = !flag.aux_flag;
       Model.neutral_ecs.remove(ecif);
       Model.addEnemyEC(ecif);
       break;
@@ -255,6 +275,20 @@ public class ECenter {
     // Remove the unit if it's being adopted by another EC
     case AdoptMe:
       return flag.id == rc.getID();
+
+    case EnemyCenter:
+      if (Model.guessed == null)
+        Model.guessSymmetry(flag.loc);
+      break;
+    case WrongSymmetry:
+      if (wrong_one == null && wrong_sym_counter >= 5) {
+        wrong_one = Symmetry.decode(flag.id);
+        if (wrong_one == null)
+          wrong_one = Model.guessed;
+        Model.wrongSymmetry(wrong_one, true);
+        wrong_sym_counter = 0;
+      }
+      break;
 
     // These aren't possible for a robot
     case Muckraker2:
@@ -325,12 +359,14 @@ public class ECenter {
             case NeutralEC:
               Model.addNeutralEC(new ECInfo(f.loc, f.influence));
               break;
-            case EnemyEC: {
-              ECInfo ecif = new ECInfo(f.loc);
-              Model.neutral_ecs.remove(ecif);
-              Model.addEnemyEC(ecif);
+            // If it's only a guess, we'll make our own guesses
+            case EnemyEC:
+              if (f.aux_flag) {
+                ECInfo ecif = new ECInfo(f.loc);
+                Model.neutral_ecs.remove(ecif);
+                Model.addEnemyEC(ecif);
+              }
               break;
-            }
             case ConvertF: {
               ECInfo ecif = new ECInfo(f.loc);
               if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif))
@@ -347,6 +383,7 @@ public class ECenter {
               ec.pendingX = f.id;
               if (ec.pendingY != 0) {
                 ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                Model.guessEC(ec.loc);
                 if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
@@ -358,6 +395,7 @@ public class ECenter {
               ec.pendingY = f.id;
               if (ec.pendingX != 0) {
                 ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                Model.guessEC(ec.loc);
                 if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
                   cvt_pending = ec.loc;
                 rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
@@ -372,6 +410,17 @@ public class ECenter {
                     rpriority = f.aux_flag;
                 }
               break;
+
+            case WrongSymmetry:
+              Symmetry sym = Symmetry.decode(f.id);
+              if (sym != null && sym == Model.guessed) {
+                Model.wrongSymmetry(sym, true);
+                wrong_one = sym;
+                wrong_sym_counter = 0;
+              }
+              break;
+
+            case EnemyCenter:
             case Muckraker2:
             case AdoptMe:
             case None:
@@ -410,20 +459,30 @@ public class ECenter {
   static MapLocation reinforce = null;
   static MapLocation reinforce2 = null;
   static int edge_cursor = 0;
+  static boolean did_reinforce_last_turn = false;
 
   static Flag nextFlag() throws GameActionException {
-    if (reinforce != null) {
+    if (!did_reinforce_last_turn && reinforce != null) {
       Flag flag = new Flag(Flag.Type.Muckraker, rpriority, reinforce);
       rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
+      did_reinforce_last_turn = true;
       rpriority = false;
       reinforce = null;
       reinforce2 = null;
       return flag;
-    } else if (reinforce2 != null) {
+    } else if (!did_reinforce_last_turn && reinforce2 != null) {
       Flag flag = new Flag(Flag.Type.Muckraker2, rpriority, reinforce2);
       rc.setIndicatorLine(rc.getLocation(), reinforce2, 0, 127, 255);
+      did_reinforce_last_turn = true;
       rpriority = false;
       reinforce2 = null;
+      return flag;
+    }
+    did_reinforce_last_turn = false;
+
+    if (wrong_one != null) {
+      Flag flag = new Flag(Flag.Type.WrongSymmetry, wrong_one.encode());
+      wrong_one = null;
       return flag;
     }
 
@@ -458,7 +517,7 @@ public class ECenter {
     // Otherwise, if we have enemy ECs stored, share those
     if (enemy_ec_cursor < Model.enemy_ecs.size()) {
       ECInfo ec = Model.enemy_ecs.get(enemy_ec_cursor++);
-      return new Flag(Flag.Type.EnemyEC, ec.loc);
+      return new Flag(Flag.Type.EnemyEC, !ec.guessed, ec.loc);
     }
 
     // And send edges
@@ -492,6 +551,15 @@ public class ECenter {
   }
 
   static void update() throws GameActionException {
+    wrong_sym_counter++;
+
+    for (ECInfo i : Model.enemy_ecs) {
+      rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 0);
+    }
+
+    income = rc.getInfluence() - last_inf;
+    last_inf = rc.getInfluence();
+
     nearby = rc.senseNearbyRobots();
     Model.updateMucks();
 

@@ -8,6 +8,13 @@ class ECInfo {
   Integer influence;
   Integer id;
   int pendingX, pendingY;
+  boolean guessed = false;
+
+  public static ECInfo guess(MapLocation loc) {
+    ECInfo i = new ECInfo(loc);
+    i.guessed = true;
+    return i;
+  }
 
   public ECInfo(MapLocation loc) {
     this.loc = loc;
@@ -32,6 +39,57 @@ class ECInfo {
   }
 }
 
+enum Symmetry {
+  Horizontal, Vertical, Rotational;
+
+  public MapLocation swap(MapLocation loc) {
+    if (loc == null)
+      return null;
+    switch (this) {
+    case Horizontal:
+      if (Model.minX != null && Model.maxX != null)
+        return new MapLocation(Model.maxX + (Model.minX - loc.x), loc.y);
+      break;
+    case Vertical:
+      if (Model.minY != null && Model.maxY != null)
+        return new MapLocation(loc.x, Model.maxY + (Model.minY - loc.y));
+      break;
+    case Rotational:
+      if (Model.minX != null && Model.maxX != null && Model.minY != null && Model.maxY != null)
+        return new MapLocation(Model.maxX + (Model.minX - loc.x), Model.maxY + (Model.minY - loc.y));
+      break;
+    }
+    return null;
+  }
+
+  public static Symmetry decode(int i) {
+    switch (i) {
+    case 0:
+      return null;
+    case 1:
+      return Horizontal;
+    case 2:
+      return Vertical;
+    case 3:
+      return Rotational;
+    default:
+      throw new RuntimeException("Unknown symmetry " + i);
+    }
+  }
+
+  public int encode() {
+    switch (this) {
+    case Horizontal:
+      return 1;
+    case Vertical:
+      return 2;
+    case Rotational:
+      return 3;
+    }
+    throw new RuntimeException("Unreachable");
+  }
+}
+
 /**
  * A model of the board, shared by robots and ECs.
  */
@@ -44,6 +102,117 @@ public class Model {
   public static ArrayList<ECInfo> friendly_ecs = new ArrayList<>(8);
   public static ArrayList<ECInfo> neutral_ecs = new ArrayList<>(8);
   public static ArrayList<ECInfo> enemy_ecs = new ArrayList<>(8);
+
+  static boolean maybe_horiz = true;
+  static boolean maybe_vert = true;
+  static boolean maybe_rot = true;
+  static Symmetry guessed = null;
+
+  public static void wrongSymmetry(Symmetry sym, boolean reguess) {
+    if (sym == null)
+      sym = guessed;
+    if (sym != null)
+      switch (sym) {
+      case Horizontal:
+        maybe_horiz = false;
+      case Vertical:
+        maybe_vert = false;
+      case Rotational:
+        maybe_rot = false;
+      }
+    if (guessed == null || guessed == sym) {
+      // Remove and reguess
+      enemy_ecs.removeIf(x -> x.guessed);
+      if (reguess)
+        guessSymmetry();
+    }
+  }
+
+  /**
+   * Should only be called when enemy_ecs is empty of guessed ECs.
+   */
+  public static void guessSymmetry() {
+    guessSymmetry(null);
+  }
+
+  /**
+   * Should only be called when enemy_ecs is empty of guessed ECs.
+   */
+  public static void guessSymmetry(MapLocation center) {
+    int[] evidence = { 0, 0, 0 };
+    if (center != null) {
+      MapLocation loc = rc.getLocation();
+      int dx = Math.abs(center.x - loc.x);
+      int dy = Math.abs(center.y - loc.y);
+      if (dx > 15 && dy < 5) {
+        // Horizontal
+        evidence[0]++;
+      } else if (dy > 15 && dx < 5) {
+        // Vertical
+        evidence[1]++;
+      } else if (dx > 15 && dy > 15) {
+        // Rotational
+        evidence[2]++;
+      }
+    }
+    for (ECInfo i : friendly_ecs) {
+      for (int s = 1; s < 4; s++) {
+        Symmetry sym = Symmetry.decode(s);
+        ECInfo ec = ECInfo.guess(sym.swap(i.loc));
+        if (friendly_ecs.contains(ec) || enemy_ecs.contains(ec) || neutral_ecs.contains(ec))
+          evidence[s - 1]++;
+      }
+    }
+    Symmetry sym = null;
+    if (maybe_rot && evidence[2] >= evidence[1] && evidence[2] >= evidence[0])
+      sym = Symmetry.Rotational;
+    else if (maybe_vert && evidence[1] >= evidence[0])
+      sym = Symmetry.Vertical;
+    else if (maybe_horiz)
+      sym = Symmetry.Horizontal;
+    else if (maybe_vert)
+      sym = Symmetry.Vertical;
+    else if (maybe_rot)
+      sym = Symmetry.Rotational;
+    else
+      throw new RuntimeException("All symmetries are impossible!");
+    setSymmetry(sym);
+  }
+
+  /**
+   * Should only be called when enemy_ecs is empty of guessed ECs.
+   */
+  static void setSymmetry(Symmetry sym) {
+    guessed = sym;
+    if (sym == null)
+      return;
+
+    System.out.println("Symmetry is probably " + sym);
+    for (ECInfo i : friendly_ecs) {
+      guessEC(i.loc);
+    }
+    // Assume neutral ECs have fallen to the enemy
+    for (ECInfo i : neutral_ecs) {
+      guessEC(i.loc);
+    }
+    if (rc.getType() == RobotType.ENLIGHTENMENT_CENTER)
+      guessEC(rc.getLocation());
+  }
+
+  static void guessEC(MapLocation original) {
+    if (guessed == null || original == null)
+      return;
+    ECInfo ec = ECInfo.guess(guessed.swap(original));
+    if (ec.loc == null)
+      return;
+    if (rc.getLocation().equals(ec) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec)
+        || neutral_ecs.contains(ec))
+      return;
+    else {
+      rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 0);
+      enemy_ecs.add(ec);
+    }
+  }
 
   public static void init(RobotController rc) {
     Model.rc = rc;
@@ -173,6 +342,8 @@ public class Model {
     }
 
     rc.setIndicatorLine(rc.getLocation(), flag_loc, 255, 0, 0);
+    // Recalculate symmetry if edges changed
+    setSymmetry(guessed);
     return true;
   }
 
@@ -199,6 +370,7 @@ public class Model {
 
     if (!friendly_ecs.contains(e)) {
       friendly_ecs.add(e);
+      guessEC(e.loc);
       return true;
     } else {
       return false;
@@ -206,21 +378,30 @@ public class Model {
   }
 
   public static boolean addEnemyEC(ECInfo e) {
-    if (!enemy_ecs.contains(e)) {
-      enemy_ecs.add(e);
-      if (e.loc != null)
-        rc.setIndicatorLine(rc.getLocation(), e.loc, 0, 0, 0);
-      return true;
-    } else {
-      return false;
+    // Confirm it if we only guessed
+    for (ECInfo i : enemy_ecs) {
+      if (i.loc.equals(e.loc)) {
+        if (i.guessed && !e.guessed) {
+          i.guessed = false;
+          return true;
+        } else {
+          return false;
+        }
+      }
     }
+    enemy_ecs.add(e);
+    if (e.loc != null)
+      rc.setIndicatorLine(rc.getLocation(), e.loc, 0, 0, 0);
+    return true;
   }
 
   public static boolean addNeutralEC(ECInfo e) {
     if (!neutral_ecs.contains(e)) {
       neutral_ecs.add(e);
-      if (e.loc != null)
+      if (e.loc != null) {
+        guessEC(e.loc);
         rc.setIndicatorLine(rc.getLocation(), e.loc, 127, 127, 127);
+      }
       return true;
     } else {
       return false;

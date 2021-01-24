@@ -59,7 +59,8 @@ public class Flag {
   public enum Type {
     None,
     /**
-     * We found an enemy EC at a location.
+     * We found an enemy EC at a location. If the aux flag isn't set, we're only
+     * guessing that there's an enemy EC at this location based on symmetry.
      */
     EnemyEC,
     /**
@@ -104,7 +105,18 @@ public class Flag {
      * EC: Sending the Y coordinate of our location as an absolute number in the ID
      * slot.
      */
-    MyLocationY;
+    MyLocationY,
+    /**
+     * While we didn't actually see an EC, there are lots of enemies nearby
+     * concentrated somewhere around this location.
+     */
+    EnemyCenter,
+    /**
+     * We came across a location where we guessed there was an enemy EC, but it's
+     * not there. If nonzero, the ID slot is used to indicate which symmetry we know
+     * is wrong.
+     */
+    WrongSymmetry;
 
     public static Type decode(int header) {
       switch (header) {
@@ -130,6 +142,10 @@ public class Flag {
         return MyLocationX;
       case 10:
         return MyLocationY;
+      case 11:
+        return EnemyCenter;
+      case 12:
+        return WrongSymmetry;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -159,6 +175,10 @@ public class Flag {
         return 9;
       case MyLocationY:
         return 10;
+      case EnemyCenter:
+        return 11;
+      case WrongSymmetry:
+        return 12;
       }
       throw new RuntimeException("That's not possible");
     }
@@ -169,6 +189,7 @@ public class Flag {
       case AdoptMe:
       case MyLocationX:
       case MyLocationY:
+      case WrongSymmetry:
         return true;
       default:
         return false;

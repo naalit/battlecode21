@@ -66,7 +66,6 @@ public class Politician {
     // conviction
     // We'll see slanderers as politicians, so subtract those first
     nfpols = -Robot.friendly_slanderers.size();
-    int fpol_conv = -Robot.total_fslan_conv;
     affected.clear();
     // We also want to know where enemy muckrakers are, so we can protect slanderers
     // We just look at the closest muckraker
@@ -79,7 +78,6 @@ public class Politician {
         muckraker = i;
       else if (i.team == team && i.type == POLITICIAN) {
         nfpols++;
-        fpol_conv += i.conviction;
       }
 
       if (dist2 <= POLITICIAN.actionRadiusSquared) {
@@ -161,12 +159,10 @@ public class Politician {
       }
     }
 
-    // Empower if we'd be using at least half of our conviction, not counting tax;
+    // Empower if we'd be using at least 2/3 of our conviction, not counting tax;
     // or if there are a ton of politicians around and this one is at or below
     // average, so its life isn't worth much
-    int avg_conv = nfpols == 0 ? 0 : fpol_conv / nfpols;
-    if ((useful_conv * 2 <= 3 * max_damage || (max_damage > 0 && nfpols > 12 && rc.getConviction() <= avg_conv))
-        && rc.canEmpower(max_r2)) {
+    if ((useful_conv * 2 <= 3 * max_damage) && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return true;
     } else {

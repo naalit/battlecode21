@@ -46,7 +46,24 @@ public class Slanderer {
       // Slanderers circle the EC, if they have one
       Robot.circleEC(4);
     } else {
-      Robot.targetMove(true);
+      MapLocation closest = null;
+      int closest_d = 100000;
+      for (ECInfo i : Model.friendly_ecs) {
+        if (i.loc != null) {
+          int dist2 = i.loc.distanceSquaredTo(loc);
+          if (dist2 < closest_d) {
+            closest = i.loc;
+            closest_d = dist2;
+          }
+        }
+      }
+      if (closest != null) {
+        Robot.target = closest;
+        Robot.targetMove();
+      } else {
+        // Hopefully we find an EC soon!
+        Robot.targetMove(true);
+      }
     }
   }
 }

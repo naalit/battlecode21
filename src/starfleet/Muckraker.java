@@ -13,6 +13,21 @@ public class Muckraker {
   }
 
   static void turn() throws GameActionException {
+    int tx = 0, ty = 0;
+    int tt = 0;
+    for (RobotInfo r : Robot.nearby) {
+      if (r.team != team) {
+        tx += r.location.x;
+        ty += r.location.y;
+        tt++;
+      }
+    }
+    if (tt >= 3) {
+      MapLocation m = new MapLocation(tx / tt, ty / tt);
+      rc.setIndicatorDot(m, 255, 0, 0);
+      Robot.queue.add(new Flag(Flag.Type.EnemyCenter, m));
+    }
+
     // Target the slanderer with the highest influence (which generates the most
     // money) in range
     Team enemy = team.opponent();
@@ -39,6 +54,22 @@ public class Muckraker {
     if (Robot.target == null && Robot.ec != null && Robot.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
       Direction dir = Robot.ec.directionTo(rc.getLocation());
       Robot.target = Robot.ec.translate(dir.dx * 100, dir.dy * 100);
+    } else {
+      MapLocation target_ec = null;
+      int ec_dist2 = 100000;
+      // Go towards the closest enemy EC
+      if (target_ec == null) {
+        for (ECInfo eec : Model.enemy_ecs) {
+          int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());
+          if (target_ec == null || dist2 < ec_dist2) {
+            target_ec = eec.loc;
+            ec_dist2 = dist2;
+          }
+        }
+      }
+
+      if (target_ec != null && ec_dist2 > 49)
+        Robot.target = target_ec;
     }
 
     // Wander around constantly
