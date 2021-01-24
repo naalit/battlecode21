@@ -11,7 +11,7 @@ public class StringSet {
   StringBuilder values = new StringBuilder();
 
   public boolean contains(String key) {
-    return values.indexOf("<" + key + ">") == -1;
+    return values.indexOf("<" + key + ">") != -1;
   }
 
   /**

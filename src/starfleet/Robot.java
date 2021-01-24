@@ -376,7 +376,19 @@ public class Robot {
     if (Model.maxY == null && !rc.onTheMap(loc.translate(0, sensor_radius))) {
       tryQueue(Model.findEdge(loc.translate(0, sensor_radius), 0, -1, true));
     }
+
+    if (Robot.muckraker != null)
+      if (Model.addMuck(Robot.muckraker))
+        needs_reporting = true;
+    if (Robot.reinforce_loc != null) {
+      Model.addMuck(Robot.reinforce_loc);
+      Robot.reinforce_loc = null;
+    }
+    closest_muck = Model.updateMucks();
   }
+
+  static MapLocation closest_muck = null;
+  static boolean needs_reporting;
 
   /**
    * Adds the given flag to the queue only if it isn't *null*.
@@ -394,13 +406,14 @@ public class Robot {
       return;
 
     // Tell the EC about nearby muckrakers
-    if (muckraker != null) {
+    if (muckraker != null && needs_reporting) {
       scary_muk = true;
+      needs_reporting = false;
       rc.setFlag(new Flag(Flag.Type.Muckraker, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muckraker)
           .encode(ec, rc.getType() == SLANDERER));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
-    } else if (scary_muk) {
+    } else if (muckraker == null && scary_muk) {
       // If we're currently showing a flag reporting a nearby muck, but it's gone, get
       // rid of the flag
       scary_muk = false;

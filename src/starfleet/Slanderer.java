@@ -12,19 +12,12 @@ public class Slanderer {
   }
 
   static void turn() throws GameActionException {
-    if (Robot.muckraker != null)
-      Model.addMuck(Robot.muckraker);
-    if (Robot.reinforce_loc != null) {
-      Model.addMuck(Robot.reinforce_loc);
-      Robot.reinforce_loc = null;
-    }
-    MapLocation muck = Model.updateMucks();
     MapLocation loc = rc.getLocation();
 
     // Run away from enemy muckrakers
-    if (muck != null) {
-      rc.setIndicatorLine(rc.getLocation(), muck, 100, 0, 150);
-      Direction dir = muck.directionTo(loc);
+    if (Robot.closest_muck != null) {
+      rc.setIndicatorLine(rc.getLocation(), Robot.closest_muck, 100, 0, 150);
+      Direction dir = Robot.closest_muck.directionTo(loc);
       Robot.target = rc.adjacentLocation(dir).add(dir);
       if (Robot.seen_pol) {
         rc.setIndicatorLine(loc, new MapLocation(Robot.pol_min_x, Robot.pol_min_y), 255, 255, 255);
@@ -38,8 +31,8 @@ public class Slanderer {
       }
       // Priority number 1 is to not go towards the muck, even if we might be in a
       // suboptimal location
-      while (Robot.target.isWithinDistanceSquared(muck, RobotType.MUCKRAKER.actionRadiusSquared)) {
-        Robot.target = Robot.target.add(muck.directionTo(Robot.target));
+      while (Robot.target.isWithinDistanceSquared(Robot.closest_muck, RobotType.MUCKRAKER.actionRadiusSquared)) {
+        Robot.target = Robot.target.add(Robot.closest_muck.directionTo(Robot.target));
       }
       Robot.targetMove(false);
     } else if (Robot.ec != null) {

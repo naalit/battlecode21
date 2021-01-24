@@ -231,6 +231,7 @@ public class Model {
   }
 
   static ArrayList<Pair<MapLocation, Integer>> mucks = new ArrayList<>();
+  static StringSet muck_set = new StringSet();
 
   static MapLocation updateMucks() {
     MapLocation loc = rc.getLocation();
@@ -239,6 +240,7 @@ public class Model {
     for (int i = 0; i < mucks.size(); i++) {
       Pair<MapLocation, Integer> m = mucks.get(i);
       if (rc.getRoundNum() - m.snd > 5) {
+        muck_set.remove(m.fst.toString());
         mucks.remove(i);
         i--;
       } else {
@@ -254,7 +256,8 @@ public class Model {
   }
 
   static boolean addMuck(MapLocation muck) {
-    if (mucks.stream().anyMatch(x -> x.fst.equals(muck)))
+    String str = muck.toString();
+    if (!muck_set.add(str))
       return false;
 
     mucks.add(new Pair<>(muck, rc.getRoundNum()));
