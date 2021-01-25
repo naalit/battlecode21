@@ -187,7 +187,6 @@ public class Model {
     if (sym == null)
       return;
 
-    System.out.println("Symmetry is probably " + sym);
     for (ECInfo i : friendly_ecs) {
       guessEC(i.loc);
     }

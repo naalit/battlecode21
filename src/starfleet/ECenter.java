@@ -518,10 +518,8 @@ public class ECenter {
         return new Flag(Flag.Type.MyLocationX, rc.getLocation().x);
       else if (loc_send_stage == 2)
         return new Flag(Flag.Type.MyLocationY, rc.getLocation().y);
-      else if (loc_send_stage == 3) {
-        System.out.println("Sending income: " + income);
+      else if (loc_send_stage == 3)
         return new Flag(Flag.Type.Income, income);
-      }
     }
 
     // Then share friendly ECs
@@ -543,7 +541,8 @@ public class ECenter {
     }
 
     if (Model.cleanup_mode) {
-      System.out.println("Activating cleanup mode!");
+      // Make sure we send out enemy ECs if we find them
+      enemy_ec_cursor = 0;
       return new Flag(Flag.Type.CleanupMode);
     }
 

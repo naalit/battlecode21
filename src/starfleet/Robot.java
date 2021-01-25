@@ -458,7 +458,6 @@ public class Robot {
       case WrongSymmetry:
         if (ec_noticed_wrong_sym || pending_id != ec_id)
           return;
-        System.out.println("Wrong symmetry for EC " + ec_id);
       default:
         counter = 0;
       }
