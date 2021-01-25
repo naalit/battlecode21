@@ -36,8 +36,21 @@ public class Slanderer {
           }
         }
       }
+      // Robot.target = stayByPols(Robot.target);
 
       Robot.targetMove(true);
+    }
+  }
+
+  static MapLocation stayByPols(MapLocation from) {
+    if (from == null)
+      return null;
+
+    if (Robot.seen_pol) {
+      return new MapLocation(Math.max(Robot.pol_min_x, Math.min(Robot.pol_max_x, from.x)),
+          Math.max(Robot.pol_min_y, Math.min(Robot.pol_max_y, from.y)));
+    } else {
+      return from;
     }
   }
 
@@ -49,12 +62,7 @@ public class Slanderer {
       rc.setIndicatorLine(rc.getLocation(), Robot.closest_muck, 100, 0, 150);
       Direction dir = Robot.closest_muck.directionTo(loc);
       Robot.target = rc.adjacentLocation(dir).add(dir);
-      if (Robot.seen_pol) {
-        rc.setIndicatorLine(loc, new MapLocation(Robot.pol_min_x, Robot.pol_min_y), 255, 255, 255);
-        rc.setIndicatorLine(loc, new MapLocation(Robot.pol_max_x, Robot.pol_max_y), 0, 0, 0);
-        Robot.target = new MapLocation(Math.max(Robot.pol_min_x, Math.min(Robot.pol_max_x, Robot.target.x)),
-            Math.max(Robot.pol_min_y, Math.min(Robot.pol_max_y, Robot.target.y)));
-      }
+      Robot.target = stayByPols(Robot.target);
       // Don't crowd the EC when running from muckrakers
       if (Robot.ec != null && Robot.target.isWithinDistanceSquared(Robot.ec, 9)) {
         Robot.target = Robot.target.add(Robot.ec.directionTo(Robot.target));

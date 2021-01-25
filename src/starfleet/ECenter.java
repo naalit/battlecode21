@@ -108,12 +108,10 @@ public class ECenter {
     // Stop spawning slanderers if the EC is surrounded by them already.
     // This is useful when pols are dying faster than slanderers, so slanderers
     // build up to the point where we can't defend them anymore.
-    if (!is_muckraker_nearby /* && nslans < 30 */ && pol_before_slan)
+    if (!is_muckraker_nearby && nslans < npols * 3 && pol_before_slan)
       return new Spawn(SLANDERER, slanInf(spend));
 
     int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4)) : 21;
-    if (pol_before_slan && total - pol_inf + income * 2 < 51)
-      return new Spawn(MUCKRAKER, 1);
 
     return new Spawn(POLITICIAN, pol_inf);
   }
