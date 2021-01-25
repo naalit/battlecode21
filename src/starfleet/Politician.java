@@ -94,18 +94,25 @@ public class Politician {
       }
     }
 
+    // An extra unit is probably worth about one turn's income, or at least that's
+    // what wololo does and it seems to work.
+    int unit_price = Robot.ec_income;
+    // So this is how much it will cost to explode
+    int emp_cost = -rc.getConviction() - unit_price;
+
     // Calculate total damage done for each possible radius
     int useful_conv = rc.getConviction() - 10;
-    // (int) (rc.getConviction() * rc.getEmpowerFactor(rc.getTeam(), 0)) - 10;
     double buff = rc.getEmpowerFactor(team, 0);
-    int[] totals = { 0, 0, 0, 0 };
+    int[] totals = { emp_cost, emp_cost, emp_cost, emp_cost };
+    // TODO keep or remove?
     boolean[] hits_enemy = { false, false, false, false };
     for (RobotInfo i : affected) {
       int dist2 = i.location.distanceSquaredTo(loc);
 
+      // TODO keep or remove?
       // Make sure pols don't crowd enemy ECs and not do anything
       if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 <= radii[0])
-        totals[0] += useful_conv / 2;
+        totals[0] += -emp_cost;
 
       for (int r = 0; r < rcounts.length; r++) {
         int r2 = radii[r];
@@ -124,6 +131,8 @@ public class Politician {
               } else {
                 // Enough to convert
                 totals[r] += i.conviction;
+                // And we converted it, so that's two units we've gained relative to the opponent
+                totals[r] += unit_price * 2;
                 // Plus the rest, non-buffed
                 totals[r] += (int) (conv - conv_to_convert);
               }
@@ -137,8 +146,22 @@ public class Politician {
               // If it's a politician, we can kill it then heal it; otherwise, we can just
               // kill it. Also, sometimes conviction is 0, but the unit can still be killed.
               // Last, we want it to be worth it for 17hp pols to kill 2 1hp muckrakers.
-              totals[r] += Math.min(conv * buff, i.type == POLITICIAN ? i.influence + i.conviction
-                  : Math.max(i.type == MUCKRAKER ? 3 : 1, i.conviction));
+              if (i.type == POLITICIAN && conv * buff > i.conviction) {
+                // We can transfer up to this much to make it a friendly pol of max health
+                totals[r] += Math.min(conv * buff, i.influence + i.conviction);
+                // And we gain two units relative to the opponent
+                totals[r] += unit_price * 2;
+              } else if (conv * buff > i.conviction) {
+                // We can kill it (note the >, because it needs to go negative to die)
+                totals[r] += Math.min(conv * buff, i.conviction);
+                // We gained one unit relative to the opponent, since they lost one
+                totals[r] += unit_price;
+                // if (i.type == MUCKRAKER)
+                //   totals[r] += 5;
+              } else {
+                // We can't kill it, just do damage
+                totals[r] += conv * buff;
+              }
             }
           }
         }
@@ -162,7 +185,7 @@ public class Politician {
     // Empower if we'd be using at least 2/3 of our conviction, not counting tax;
     // or if there are a ton of politicians around and this one is at or below
     // average, so its life isn't worth much
-    if ((useful_conv * 2 <= 3 * max_damage) && rc.canEmpower(max_r2)) {
+    if (max_damage > 0 && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
       return true;
     } else {

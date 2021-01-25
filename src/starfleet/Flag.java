@@ -116,7 +116,12 @@ public class Flag {
      * not there. If nonzero, the ID slot is used to indicate which symmetry we know
      * is wrong.
      */
-    WrongSymmetry;
+    WrongSymmetry,
+    /**
+     * EC: sending out our income last turn (in the ID slot), so pols can use it to
+     * calculate things.
+     */
+    Income;
 
     public static Type decode(int header) {
       switch (header) {
@@ -146,6 +151,8 @@ public class Flag {
         return EnemyCenter;
       case 12:
         return WrongSymmetry;
+      case 13:
+        return Income;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -179,6 +186,8 @@ public class Flag {
         return 11;
       case WrongSymmetry:
         return 12;
+      case Income:
+        return 13;
       }
       throw new RuntimeException("That's not possible");
     }
@@ -190,6 +199,7 @@ public class Flag {
       case MyLocationX:
       case MyLocationY:
       case WrongSymmetry:
+      case Income:
         return true;
       default:
         return false;

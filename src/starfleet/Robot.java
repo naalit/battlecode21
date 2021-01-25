@@ -57,7 +57,7 @@ public class Robot {
       if (best == null && rc.isReady()) {
         if (exploring) {
           target = retarget();
-          return false;
+          return targetMove(false);
         } else {
           MapLocation[] others = { loc.add(dir.rotateLeft().rotateLeft()), loc.add(dir.rotateRight().rotateRight()) };
           for (MapLocation i : others) {
@@ -178,6 +178,7 @@ public class Robot {
    */
   static MapLocation cvt_loc = null;
   static boolean ec_noticed_wrong_sym = false;
+  static int ec_income;
 
   /**
    * Puts nearby units into `nearby`, reads flags, updates the list of enemy ECs,
@@ -234,6 +235,10 @@ public class Robot {
         case WrongSymmetry:
           ec_noticed_wrong_sym = true;
           Model.wrongSymmetry(Symmetry.decode(flag.id), false);
+          break;
+
+        case Income:
+          ec_income = flag.id;
           break;
 
         // As a robot, we know our home EC's location already
@@ -484,6 +489,7 @@ public class Robot {
   public static void init(RobotController rc) {
     Model.init(rc);
     team = rc.getTeam();
+    ec_income = (int) Math.ceil(0.2 * Math.sqrt(rc.getRoundNum()));
 
     switch (rc.getType()) {
     // For a slanderer, initialize both slanderer and politician code

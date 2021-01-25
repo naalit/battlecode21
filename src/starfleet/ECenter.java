@@ -10,6 +10,7 @@ public class ECenter {
 
   static int last_inf = 150;
   static int income = 0;
+  static int spent = 0;
   static int last_votes;
   static boolean bid_last_round = false;
   // We start by bidding 1, and then if we lose, we increment our bid by 1
@@ -130,9 +131,12 @@ public class ECenter {
         pol_before_slan = true;
         pol_inf_cursor += 1;
       }
+      spent = spawn.influence;
       rc.buildRobot(spawn.type, dir, spawn.influence);
       MapLocation l = rc.adjacentLocation(dir);
       addID(rc.senseRobotAtLocation(l).ID);
+    } else {
+      spent = 0;
     }
   }
 
@@ -291,6 +295,7 @@ public class ECenter {
       break;
 
     // These aren't possible for a robot
+    case Income:
     case Muckraker2:
     case MyLocationX:
     case MyLocationY:
@@ -420,6 +425,7 @@ public class ECenter {
               }
               break;
 
+            case Income:
             case EnemyCenter:
             case Muckraker2:
             case AdoptMe:
@@ -494,12 +500,16 @@ public class ECenter {
     }
 
     // If we need to share our location, do that
-    if (loc_send_stage < 2) {
+    if (loc_send_stage < 3) {
       loc_send_stage++;
       if (loc_send_stage == 1)
         return new Flag(Flag.Type.MyLocationX, rc.getLocation().x);
       else if (loc_send_stage == 2)
         return new Flag(Flag.Type.MyLocationY, rc.getLocation().y);
+      else if (loc_send_stage == 3) {
+        System.out.println("Sending income: " + income);
+        return new Flag(Flag.Type.Income, income);
+      }
     }
 
     // Then share friendly ECs
@@ -557,7 +567,7 @@ public class ECenter {
       rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 0);
     }
 
-    income = rc.getInfluence() - last_inf;
+    income = rc.getInfluence() + spent - last_inf;
     last_inf = rc.getInfluence();
 
     nearby = rc.senseNearbyRobots();
