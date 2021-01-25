@@ -64,8 +64,7 @@ public class Slanderer {
       while (Robot.target.isWithinDistanceSquared(Robot.closest_muck, RobotType.MUCKRAKER.actionRadiusSquared)) {
         Robot.target = Robot.target.add(Robot.closest_muck.directionTo(Robot.target));
       }
-      if (!Robot.targetMove(false))
-        lattice();
+      Robot.targetMove(false);
     } else if (Robot.ec != null) {
       lattice();
       // // Slanderers circle the EC, if they have one
