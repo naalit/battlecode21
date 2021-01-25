@@ -89,6 +89,7 @@ public class ECenter {
   }
 
   static boolean pol_before_slan = true;
+  static int buff_muck_cursor = 0;
 
   static Spawn nextSpawn() {
     // Calculate the amount we're willing to spend this turn.
@@ -103,7 +104,7 @@ public class ECenter {
       return new Spawn(SLANDERER, slanInf(spend));
 
     if (nmuks < 2 || (pol_before_slan && spend < 41))
-      return new Spawn(MUCKRAKER, spend > 500 ? 10 : 1);
+      return new Spawn(MUCKRAKER, spend > 1000 && buff_muck_cursor++ % 3 == 0 ? 250 : 1);
 
     // Stop spawning slanderers if the EC is surrounded by them already.
     // This is useful when pols are dying faster than slanderers, so slanderers
@@ -111,7 +112,30 @@ public class ECenter {
     if (!is_muckraker_nearby && nslans < npols * 3 && pol_before_slan)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4)) : 21;
+    int guard_inf = (pol_inf_cursor % 6 == 0) ? buff_muck_inf + 11 : 21;
+    guard_inf = Math.max(guard_inf, 21);
+    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4))
+        : guard_inf;
+    if (pol_inf_cursor % 2 == 1) {
+      ECInfo z = null;
+      for (ECInfo i : Model.neutral_ecs) {
+        int net = i.influence * 3 / 2;
+        if (!i.attacked && pol_inf < net && spend >= net && rc.isReady()) {
+          pol_inf = net;
+          z = i;
+        }
+      }
+      if (z != null)
+        z.attacked = true;
+    }
+
+    // Guards have `inf % 2 == 1`, others don't.
+    if (pol_inf_cursor % 2 == 1 && pol_inf >= 100 && pol_inf % 2 == 0)
+      pol_inf += 1;
+    else if (pol_inf_cursor % 2 == 0 && pol_inf >= 100 && pol_inf % 2 == 1)
+      pol_inf += 1;
+    if (pol_inf > spend)
+      return new Spawn(MUCKRAKER, 1);
 
     return new Spawn(POLITICIAN, pol_inf);
   }
@@ -217,21 +241,8 @@ public class ECenter {
     }
   }
 
-  /**
-   * Whether the `reinforce` or `reinforce2` messages we have had slanderers
-   * nearby them when they were sent
-   */
-  static boolean rpriority = false;
-  /**
-   * If we just reset symmetry, this stores the wrong value so we can send it out
-   */
-  static Symmetry wrong_one = null;
-  /**
-   * Since robots may keep flags up for more than one turn, we have a small grace
-   * period after resetting symmetry before we accept new reports of wrong
-   * symmetry.
-   */
-  static int wrong_sym_counter = 5;
+  static int buff_muck_inf = 1;
+  static int buff_muck_turn = 0;
 
   /**
    * Returns whether to keep the unit sending the flag
@@ -248,7 +259,7 @@ public class ECenter {
       break;
     case EnemyEC: {
       ECInfo ecif = new ECInfo(flag.loc);
-      ecif.guessed = !flag.aux_flag;
+      ecif.guessed = flag.sym;
       Model.neutral_ecs.remove(ecif);
       Model.addEnemyEC(ecif);
       break;
@@ -257,9 +268,9 @@ public class ECenter {
       ECInfo ecif = new ECInfo(flag.loc);
       boolean was_enemy = Model.enemy_ecs.remove(ecif);
       if (was_enemy || Model.neutral_ecs.remove(ecif)) {
-        if (cvt_pending == null)
-          cvt_pending = flag.loc;
-        if (was_enemy && Model.enemy_ecs.isEmpty() && rc.getRobotCount() > 500 && Model.knowsEdges()) {
+        if (Model.last_converted == null)
+          Model.last_converted = flag.loc;
+        if (was_enemy && Model.enemy_ecs.isEmpty() && rc.getRobotCount() > 200 && Model.knowsEdges()) {
           // This was probably the last enemy EC, so enter cleanup mode
           Model.cleanup_mode = true;
         }
@@ -272,12 +283,16 @@ public class ECenter {
 
     // If a slanderer is scared, ask for reinforcements
     case Muckraker:
-      if ((flag.aux_flag || !rpriority) && ((flag.aux_flag && !rpriority) || reinforce == null
-          || flag.loc.isWithinDistanceSquared(rc.getLocation(), reinforce.distanceSquaredTo(rc.getLocation()))))
+      if ((flag.aux_flag || !Model.rpriority) && ((flag.aux_flag && !Model.rpriority) || Model.reinforce == null
+          || flag.loc.isWithinDistanceSquared(rc.getLocation(), Model.reinforce.distanceSquaredTo(rc.getLocation()))))
         if (Model.addMuck(flag.loc)) {
-          reinforce = flag.loc;
-          rpriority = flag.aux_flag;
+          Model.reinforce = flag.loc;
+          Model.rpriority = flag.aux_flag;
         }
+      if (flag.influence >= buff_muck_inf) {
+        buff_muck_inf = flag.influence;
+        buff_muck_turn = rc.getRoundNum();
+      }
       break;
 
     // Remove the unit if it's being adopted by another EC
@@ -289,12 +304,12 @@ public class ECenter {
         Model.guessSymmetry(flag.loc);
       break;
     case WrongSymmetry:
-      if (wrong_one == null && wrong_sym_counter >= 5) {
-        wrong_one = Symmetry.decode(flag.id);
-        if (wrong_one == null)
-          wrong_one = Model.guessed;
-        Model.wrongSymmetry(wrong_one, true);
-        wrong_sym_counter = 0;
+      if (Model.unreported_wrong == null && rc.getRoundNum() - Model.wrong_sym_turn >= 5) {
+        Model.unreported_wrong = Symmetry.decode(flag.id);
+        if (Model.unreported_wrong == null)
+          Model.unreported_wrong = Model.guessed;
+        Model.wrongSymmetry(Model.unreported_wrong, true);
+        Model.wrong_sym_turn = rc.getRoundNum();
       }
       break;
 
@@ -352,113 +367,6 @@ public class ECenter {
     left_off = end == endidx ? 0 : end;
   }
 
-  static void updateECFlags() {
-    for (int i = 0; i < Model.friendly_ecs.size(); i++) {
-      ECInfo ec = Model.friendly_ecs.get(i);
-      try {
-        int flag = rc.getFlag(ec.id);
-        if ((flag & Flag.HEADER_MASK) != 0) {
-          Flag f = Flag.decode(ec.loc, flag);
-          // f will be null if we needed the location of the EC but haven't got it yet
-          if (f != null) {
-
-            switch (f.type) {
-            case FriendlyEC:
-              Model.addFriendlyEC(new ECInfo(f.id));
-              break;
-            case NeutralEC:
-              Model.addNeutralEC(new ECInfo(f.loc, f.influence));
-              break;
-            // If it's only a guess, we'll make our own guesses
-            case EnemyEC:
-              if (f.aux_flag) {
-                ECInfo ecif = new ECInfo(f.loc);
-                Model.neutral_ecs.remove(ecif);
-                Model.addEnemyEC(ecif);
-              }
-              break;
-            case ConvertF: {
-              ECInfo ecif = new ECInfo(f.loc);
-              if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif))
-                if (cvt_pending == null)
-                  cvt_pending = f.loc;
-              break;
-            }
-            case Edge:
-              Model.setEdge(f.aux_flag, f.loc, ec.loc);
-              break;
-            case MyLocationX:
-              if (ec.loc != null)
-                break;
-              ec.pendingX = f.id;
-              if (ec.pendingY != 0) {
-                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
-                Model.guessEC(ec.loc);
-                if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
-                  cvt_pending = ec.loc;
-                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
-              }
-              break;
-            case MyLocationY:
-              if (ec.loc != null)
-                break;
-              ec.pendingY = f.id;
-              if (ec.pendingX != 0) {
-                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
-                Model.guessEC(ec.loc);
-                if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
-                  cvt_pending = ec.loc;
-                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
-              }
-              break;
-            case Muckraker:
-              if (reinforce2 == null
-                  || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation())))
-                if (Model.addMuck(f.loc)) {
-                  reinforce2 = f.loc;
-                  if (!rpriority)
-                    rpriority = f.aux_flag;
-                }
-              break;
-
-            case WrongSymmetry:
-              Symmetry sym = Symmetry.decode(f.id);
-              if (sym != null && sym == Model.guessed) {
-                Model.wrongSymmetry(sym, true);
-                wrong_one = sym;
-                wrong_sym_counter = 0;
-              }
-              break;
-
-            case CleanupMode:
-              if (Model.enemy_ecs.isEmpty())
-                Model.cleanup_mode = true;
-              break;
-
-            case Income:
-            case EnemyCenter:
-            case Muckraker2:
-            case AdoptMe:
-            case None:
-              break;
-            }
-
-          }
-        }
-      } catch (GameActionException e) {
-        // The EC is dead, so remove it
-        Model.friendly_ecs.remove(i);
-        // If it's dead, it now belongs to the enemy
-        if (ec.loc != null) {
-          ec.id = null;
-          Model.enemy_ecs.add(ec);
-        }
-        // Don't go past the end of the list
-        i--;
-      }
-    }
-  }
-
   /**
    * 0: sending x, 1: sending y, 2: done.
    */
@@ -468,44 +376,41 @@ public class ECenter {
    * Robot does. We reset most of them when we've sent everything, so we
    * constantly repeat all the information we know.
    */
-  static MapLocation cvt_pending = null;
   static int enemy_ec_cursor = 0;
   static int friendly_ec_cursor = 0;
   static int neutral_ec_cursor = 0;
-  static MapLocation reinforce = null;
-  static MapLocation reinforce2 = null;
   static int edge_cursor = 0;
   static boolean did_reinforce_last_turn = false;
 
   static Flag nextFlag() throws GameActionException {
-    if (!did_reinforce_last_turn && reinforce != null) {
-      Flag flag = new Flag(Flag.Type.Muckraker, rpriority, reinforce);
-      rc.setIndicatorLine(rc.getLocation(), reinforce, 0, 0, 255);
+    if (!did_reinforce_last_turn && Model.reinforce != null) {
+      Flag flag = new Flag(Flag.Type.Muckraker, Model.rpriority, Model.reinforce);
+      rc.setIndicatorLine(rc.getLocation(), Model.reinforce, 0, 0, 255);
       did_reinforce_last_turn = true;
-      rpriority = false;
-      reinforce = null;
-      reinforce2 = null;
+      Model.rpriority = false;
+      Model.reinforce = null;
+      Model.reinforce2 = null;
       return flag;
-    } else if (!did_reinforce_last_turn && reinforce2 != null) {
-      Flag flag = new Flag(Flag.Type.Muckraker2, rpriority, reinforce2);
-      rc.setIndicatorLine(rc.getLocation(), reinforce2, 0, 127, 255);
+    } else if (!did_reinforce_last_turn && Model.reinforce2 != null) {
+      Flag flag = new Flag(Flag.Type.Muckraker2, Model.rpriority, Model.reinforce2);
+      rc.setIndicatorLine(rc.getLocation(), Model.reinforce2, 0, 127, 255);
       did_reinforce_last_turn = true;
-      rpriority = false;
-      reinforce2 = null;
+      Model.rpriority = false;
+      Model.reinforce2 = null;
       return flag;
     }
     did_reinforce_last_turn = false;
 
-    if (wrong_one != null) {
-      Flag flag = new Flag(Flag.Type.WrongSymmetry, wrong_one.encode());
-      wrong_one = null;
+    if (Model.unreported_wrong != null) {
+      Flag flag = new Flag(Flag.Type.WrongSymmetry, Model.unreported_wrong.encode());
+      Model.unreported_wrong = null;
       return flag;
     }
 
-    if (cvt_pending != null) {
-      rc.setIndicatorLine(rc.getLocation(), cvt_pending, 255, 0, 255);
-      Flag flag = new Flag(Flag.Type.ConvertF, cvt_pending);
-      cvt_pending = null;
+    if (Model.last_converted != null) {
+      rc.setIndicatorLine(rc.getLocation(), Model.last_converted, 255, 0, 255);
+      Flag flag = new Flag(Flag.Type.ConvertF, Model.last_converted);
+      Model.last_converted = null;
       return flag;
     }
 
@@ -535,7 +440,7 @@ public class ECenter {
     // Otherwise, if we have enemy ECs stored, share those
     if (enemy_ec_cursor < Model.enemy_ecs.size()) {
       ECInfo ec = Model.enemy_ecs.get(enemy_ec_cursor++);
-      return new Flag(Flag.Type.EnemyEC, !ec.guessed, ec.loc);
+      return Flag.guessEnemyEC(ec.loc, ec.guessed);
     }
 
     if (Model.cleanup_mode) {
@@ -575,7 +480,10 @@ public class ECenter {
   }
 
   static void update() throws GameActionException {
-    wrong_sym_counter++;
+    if (rc.getRoundNum() - buff_muck_turn > 30) {
+      buff_muck_inf = 1;
+      buff_muck_turn = rc.getRoundNum();
+    }
 
     for (ECInfo i : Model.enemy_ecs) {
       rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 0);
@@ -603,10 +511,10 @@ public class ECenter {
         if (i.type == POLITICIAN)
           total_epol_conv += i.conviction;
 
-        if (i.type == MUCKRAKER && (reinforce == null
-            || i.location.isWithinDistanceSquared(loc, reinforce.distanceSquaredTo(rc.getLocation()))))
+        if (i.type == MUCKRAKER && (Model.reinforce == null
+            || i.location.isWithinDistanceSquared(loc, Model.reinforce.distanceSquaredTo(rc.getLocation()))))
           if (Model.addMuck(i.location))
-            reinforce = i.location;
+            Model.reinforce = i.location;
 
         if (!is_muckraker_nearby && i.type == MUCKRAKER) {
           is_muckraker_nearby = true;
@@ -639,13 +547,14 @@ public class ECenter {
       }
     }
 
-    if (is_muckraker_nearby && is_slanderer_nearby && reinforce != null) {
+    if (is_muckraker_nearby && is_slanderer_nearby && Model.reinforce != null) {
     } else {
-      reinforce2 = reinforce;
-      reinforce = null;
+      Model.reinforce2 = Model.reinforce;
+      Model.rpriority = true;
+      Model.reinforce = null;
     }
 
-    updateECFlags();
+    Model.updateECFlags();
     updateDistantFlags();
 
     showFlag();

@@ -8,11 +8,12 @@ class ECInfo {
   Integer influence;
   Integer id;
   int pendingX, pendingY;
-  boolean guessed = false;
+  Symmetry guessed = null;
+  boolean attacked = false;
 
-  public static ECInfo guess(MapLocation loc) {
+  public static ECInfo guess(MapLocation loc, Symmetry sym) {
     ECInfo i = new ECInfo(loc);
-    i.guessed = true;
+    i.guessed = sym;
     return i;
   }
 
@@ -108,6 +109,134 @@ public class Model {
   static boolean maybe_rot = true;
   static Symmetry guessed = null;
 
+  static MapLocation last_converted = null;
+  static MapLocation reinforce = null;
+  static MapLocation reinforce2 = null;
+  static boolean rpriority = false;
+  static int wrong_sym_turn = 0;
+  static Symmetry unreported_wrong = null;
+  static Integer home_ec_id = null;
+  static int home_ec_income = 1;
+  static boolean home_ec_died = false;
+
+  static void updateECFlags() {
+    for (int i = 0; i < Model.friendly_ecs.size(); i++) {
+      ECInfo ec = Model.friendly_ecs.get(i);
+      try {
+        int flag = rc.getFlag(ec.id);
+        if ((flag & Flag.HEADER_MASK) != 0) {
+          Flag f = Flag.decode(ec.loc, flag);
+          // f will be null if we needed the location of the EC but haven't got it yet
+          if (f != null) {
+
+            switch (f.type) {
+            case FriendlyEC:
+              addFriendlyEC(new ECInfo(f.id));
+              break;
+            case NeutralEC:
+              addNeutralEC(new ECInfo(f.loc, f.influence));
+              break;
+            // If it's only a guess, and we're an EC, we'll make our own guesses
+            case EnemyEC:
+              if (rc.getType() != RobotType.ENLIGHTENMENT_CENTER || f.sym == null) {
+                ECInfo ecif = new ECInfo(f.loc);
+                ecif.guessed = f.sym;
+                friendly_ecs.remove(ecif);
+                neutral_ecs.remove(ecif);
+                addEnemyEC(ecif);
+              }
+              break;
+            case ConvertF: {
+              ECInfo ecif = new ECInfo(f.loc);
+              if (enemy_ecs.remove(ecif) || neutral_ecs.remove(ecif))
+                last_converted = f.loc;
+              break;
+            }
+            case Edge:
+              Model.setEdge(f.aux_flag, f.loc, ec.loc);
+              break;
+            case MyLocationX:
+              if (ec.loc != null)
+                break;
+              ec.pendingX = f.id;
+              if (ec.pendingY != 0) {
+                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                Model.guessEC(ec.loc);
+                if (enemy_ecs.remove(ec) || neutral_ecs.remove(ec))
+                  last_converted = ec.loc;
+                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
+              }
+              break;
+            case MyLocationY:
+              if (ec.loc != null)
+                break;
+              ec.pendingY = f.id;
+              if (ec.pendingX != 0) {
+                ec.loc = new MapLocation(ec.pendingX, ec.pendingY);
+                Model.guessEC(ec.loc);
+                if (Model.enemy_ecs.remove(ec) || Model.neutral_ecs.remove(ec))
+                  last_converted = ec.loc;
+                rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 255);
+              }
+              break;
+            case Muckraker2:
+              if (rc.getType() == RobotType.ENLIGHTENMENT_CENTER)
+                break;
+            case Muckraker:
+              if (reinforce2 == null
+                  || f.loc.isWithinDistanceSquared(rc.getLocation(), reinforce2.distanceSquaredTo(rc.getLocation())))
+                if (addMuck(f.loc)) {
+                  reinforce2 = f.loc;
+                  if (!rpriority)
+                    rpriority = f.aux_flag;
+                }
+              break;
+
+            case WrongSymmetry:
+              Symmetry sym = Symmetry.decode(f.id);
+              if (sym != null && sym == Model.guessed) {
+                wrongSymmetry(sym, true);
+                wrong_sym_turn = rc.getRoundNum();
+                unreported_wrong = sym;
+              }
+              break;
+
+            case CleanupMode:
+              if (enemy_ecs.isEmpty())
+                cleanup_mode = true;
+              break;
+
+            case Income:
+              if (home_ec_id == ec.id) {
+                home_ec_income = f.id;
+              }
+              break;
+
+            case EnemyCenter:
+            case AdoptMe:
+            case None:
+              break;
+            }
+
+          }
+        }
+      } catch (GameActionException e) {
+        // The EC is dead, so remove it
+        Model.friendly_ecs.remove(i);
+        // If it's dead, it now belongs to the enemy
+        if (ec.loc != null) {
+          ec.id = null;
+          Model.enemy_ecs.add(ec);
+        }
+        if (ec.id == home_ec_id) {
+          home_ec_died = true;
+        }
+        // Don't go past the end of the list
+        i--;
+      }
+    }
+  }
+
   public static void wrongSymmetry(Symmetry sym, boolean reguess) {
     if (sym == null)
       sym = guessed;
@@ -120,9 +249,10 @@ public class Model {
       case Rotational:
         maybe_rot = false;
       }
-    if (guessed == null || guessed == sym) {
+    if (sym != null && (guessed == null || guessed == sym)) {
       // Remove and reguess
-      enemy_ecs.removeIf(x -> x.guessed);
+      final Symmetry sym2 = sym;
+      enemy_ecs.removeIf(x -> x.guessed == sym2);
       if (reguess)
         guessSymmetry();
     }
@@ -158,7 +288,7 @@ public class Model {
     for (ECInfo i : friendly_ecs) {
       for (int s = 1; s < 4; s++) {
         Symmetry sym = Symmetry.decode(s);
-        ECInfo ec = ECInfo.guess(sym.swap(i.loc));
+        ECInfo ec = ECInfo.guess(sym.swap(i.loc), sym);
         if (friendly_ecs.contains(ec) || enemy_ecs.contains(ec) || neutral_ecs.contains(ec))
           evidence[s - 1]++;
       }
@@ -201,7 +331,7 @@ public class Model {
   static void guessEC(MapLocation original) {
     if (guessed == null || original == null)
       return;
-    ECInfo ec = ECInfo.guess(guessed.swap(original));
+    ECInfo ec = ECInfo.guess(guessed.swap(original), guessed);
     if (ec.loc == null)
       return;
     if (rc.getLocation().equals(ec) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec) || neutral_ecs.contains(ec))
@@ -388,8 +518,8 @@ public class Model {
     // Confirm it if we only guessed
     for (ECInfo i : enemy_ecs) {
       if (i.loc.equals(e.loc)) {
-        if (i.guessed && !e.guessed) {
-          i.guessed = false;
+        if (i.guessed != null && e.guessed == null) {
+          i.guessed = null;
           return true;
         } else {
           return false;

@@ -99,7 +99,8 @@ public class Politician {
     // Except, wololo doesn't spawn many slanderers and we do, so our price gets too
     // high.
     // We reduce it with a logistic function.
-    int unit_price = (int) (20 * Math.atan(Robot.ec_income / 20.0));
+    double N = 20;
+    int unit_price = (int) (N * Math.atan(Model.home_ec_income / N));
     // So this is how much it will cost to explode
     int emp_cost = -rc.getConviction() - unit_price;
 
@@ -276,8 +277,8 @@ public class Politician {
 
     if (target_ec != null)
       Robot.target = target_ec;
-    else if (Robot.cvt_loc != null)
-      Robot.target = Robot.cvt_loc;
+    else if (Model.last_converted != null)
+      Robot.target = Model.last_converted;
     Robot.targetMove(true);
   }
 
@@ -354,7 +355,7 @@ public class Politician {
       Robot.targetMove(true);
     }
 
-    if (rc.getConviction() < 100)
+    if (rc.getConviction() < 100 || rc.getConviction() % 2 == 1)
       lattice();
     else
       attackOrExplore();

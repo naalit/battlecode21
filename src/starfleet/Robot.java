@@ -172,13 +172,8 @@ public class Robot {
    * Stores the closest muckraker to this unit.
    */
   static MapLocation muckraker = null;
-  /**
-   * When we hear about a neutral or enemy EC converting to friendly, we store it
-   * here so that politicians can go there and defend it.
-   */
-  static MapLocation cvt_loc = null;
+  static int muck_conv = 0;
   static boolean ec_noticed_wrong_sym = false;
-  static int ec_income;
 
   /**
    * Puts nearby units into `nearby`, reads flags, updates the list of enemy ECs,
@@ -190,74 +185,29 @@ public class Robot {
       rpriority = false;
     int start_round = rc.getRoundNum();
 
+    Model.home_ec_id = ec_id;
+    Model.updateECFlags();
+    if (Model.home_ec_died) {
+      Model.home_ec_died = false;
+      ec = null;
+      ec_id = null;
+    }
+
     if (ec_id != null) {
       rc.setIndicatorLine(rc.getLocation(), ec, 128, 128, 0);
-      try {
-        Flag flag = Flag.decode(ec, rc.getFlag(ec_id));
-        switch (flag.type) {
-        case EnemyEC: {
-          ECInfo ecif = new ECInfo(flag.loc);
-          ecif.guessed = !flag.aux_flag;
-          Model.friendly_ecs.remove(ecif);
-          Model.neutral_ecs.remove(ecif);
-          Model.addEnemyEC(ecif);
-          break;
-        }
-        case NeutralEC:
-          Model.addNeutralEC(new ECInfo(flag.loc, flag.influence));
-          break;
-        case FriendlyEC:
-          Model.addFriendlyEC(new ECInfo(flag.id));
-          break;
+    }
 
-        case Edge:
-          Model.setEdge(flag.aux_flag, flag.loc, ec);
-          break;
-
-        case ConvertF: {
-          ECInfo ecif = new ECInfo(flag.loc);
-          if (Model.neutral_ecs.remove(ecif)) {
-            rc.setIndicatorLine(rc.getLocation(), flag.loc, 255, 0, 255);
-            cvt_loc = flag.loc;
-          }
-          Model.enemy_ecs.remove(ecif);
-          break;
-        }
-        case Muckraker:
-        case Muckraker2:
-          if (rturns >= 5 || flag.aux_flag || !rpriority) {
-            rturns = 0;
-            rpriority = flag.aux_flag;
-            reinforce_loc = flag.loc;
-          }
-          break;
-
-        case WrongSymmetry:
-          ec_noticed_wrong_sym = true;
-          Model.wrongSymmetry(Symmetry.decode(flag.id), false);
-          break;
-
-        case Income:
-          ec_income = flag.id;
-          break;
-
-        case CleanupMode:
-          Model.cleanup_mode = true;
-          break;
-
-        // As a robot, we know our home EC's location already
-        case MyLocationX:
-        case MyLocationY:
-        case AdoptMe:
-        case EnemyCenter:
-        case None:
-          break;
-        }
-      } catch (GameActionException e) {
-        // Our EC is dead
-        ec = null;
-        ec_id = null;
+    // We only get reinforce2's, not reinforce, since we're not an EC
+    if (Model.reinforce2 != null) {
+      if (rturns >= 5 || Model.rpriority || !rpriority) {
+        rturns = 0;
+        rpriority = Model.rpriority;
+        reinforce_loc = Model.reinforce2;
       }
+    }
+    if (Model.unreported_wrong != null) {
+      ec_noticed_wrong_sym = true;
+      Model.unreported_wrong = null;
     }
 
     // Sense nearby robots and store them in `nearby`
@@ -291,7 +241,7 @@ public class Robot {
 
           if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif)) {
             rc.setIndicatorLine(rc.getLocation(), iloc, 255, 0, 255);
-            cvt_loc = iloc;
+            Model.last_converted = iloc;
             queue.add(new Flag(Flag.Type.ConvertF, iloc));
           }
 
@@ -308,7 +258,7 @@ public class Robot {
             queue.add(new Flag(Flag.Type.AdoptMe, i.ID));
             pending_ec = iloc;
             pending_id = i.ID;
-            cvt_loc = null;
+            Model.last_converted = null;
           }
         }
 
@@ -340,7 +290,7 @@ public class Robot {
           Model.friendly_ecs.remove(ecif);
           Model.neutral_ecs.remove(ecif);
           if (Model.addEnemyEC(ecif)) {
-            queue.add(new Flag(Flag.Type.EnemyEC, true, iloc));
+            queue.add(new Flag(Flag.Type.EnemyEC, iloc));
           }
         } else {
           // It's a neutral EC
@@ -350,20 +300,22 @@ public class Robot {
         }
       } else if (i.type == MUCKRAKER) {
         if (muckraker == null
-            || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation())))
+            || i.location.isWithinDistanceSquared(rc.getLocation(), muckraker.distanceSquaredTo(rc.getLocation()))) {
           muckraker = i.location;
+          muck_conv = i.conviction;
+        }
       }
     }
 
     // Check if we can confirm or deny guessed ECs in range
     for (ECInfo i : Model.enemy_ecs) {
-      if (i.guessed) {
+      if (i.guessed != null) {
         if (rc.canSenseLocation(i.loc)) {
           RobotInfo r = rc.senseRobotAtLocation(i.loc);
           // If it *is* an EC, we already found it and reported it above
           if (r == null || r.type != ENLIGHTENMENT_CENTER) {
-            Model.wrongSymmetry(null, false);
-            queue.add(new Flag(Flag.Type.WrongSymmetry, 0));
+            Model.wrongSymmetry(i.guessed, false);
+            queue.add(new Flag(Flag.Type.WrongSymmetry, i.guessed.encode()));
             ec_noticed_wrong_sym = false;
             break;
           }
@@ -418,8 +370,11 @@ public class Robot {
     if (muckraker != null && needs_reporting) {
       scary_muk = true;
       needs_reporting = false;
-      rc.setFlag(new Flag(Flag.Type.Muckraker, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muckraker)
+      rc.setFlag(Flag.muckraker(muckraker, (rc.getType() == SLANDERER || !friendly_slanderers.isEmpty()), muck_conv)
           .encode(ec, rc.getType() == SLANDERER));
+      // rc.setFlag(new Flag(Flag.Type.Muckraker, (rc.getType() == SLANDERER ||
+      // !friendly_slanderers.isEmpty()), muckraker)
+      // .encode(ec, rc.getType() == SLANDERER));
       rc.setIndicatorLine(rc.getLocation(), muckraker, 0, 0, 255);
       return;
     } else if (muckraker == null && scary_muk) {
@@ -492,7 +447,7 @@ public class Robot {
   public static void init(RobotController rc) {
     Model.init(rc);
     team = rc.getTeam();
-    ec_income = (int) Math.ceil(0.2 * Math.sqrt(rc.getRoundNum()));
+    Model.home_ec_income = (int) Math.ceil(0.2 * Math.sqrt(rc.getRoundNum()));
 
     switch (rc.getType()) {
     // For a slanderer, initialize both slanderer and politician code

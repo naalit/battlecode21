@@ -72,7 +72,12 @@ public class Muckraker {
         Robot.target = target_ec;
     }
 
-    // Wander around constantly
-    Robot.targetMove(true);
+    if (rc.getConviction() < 20 || rc.getLocation().equals(Robot.target) || Robot.target == null
+        || !Model.isOnMap(Robot.target)) {
+      // Wander around constantly
+      Robot.targetMove(true);
+    } else {
+      Robot.targetMove(false);
+    }
   }
 }

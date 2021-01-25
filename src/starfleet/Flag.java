@@ -17,6 +17,7 @@ import battlecode.common.*;
  * Alternatively, the aux flag bit + the location bit can be the ID of a unit (probably EC), depending on the flag type.
  *
  * For neutral ECs, we also report the influence, using the four bits after the header and the aux flag, and multiplying that number by 25.
+ * For muckrakers (just ones sent from robots), we report the conviction using the four bits after the header but not the aux flag, and we use the formula `exp(0.4x)` to map it to conviction.
  */
 public class Flag {
   public boolean aux_flag = false;
@@ -24,9 +25,25 @@ public class Flag {
   public Integer id = null;
   public Type type;
   public Integer influence = null;
+  public Symmetry sym = null;
 
   public static Flag neutralEC(MapLocation loc, int influence) {
     Flag flag = new Flag(Type.NeutralEC, loc);
+    flag.influence = influence;
+    return flag;
+  }
+
+  public static Flag guessEnemyEC(MapLocation loc, Symmetry sym) {
+    Flag flag = new Flag(Type.EnemyEC, loc);
+    flag.sym = sym;
+    return flag;
+  }
+
+  /**
+   * Muckraker2 doesn't come with conviction, since it's only sent from ECs.
+   */
+  public static Flag muckraker(MapLocation loc, boolean aux_flag, int influence) {
+    Flag flag = new Flag(Type.Muckraker, aux_flag, loc);
     flag.influence = influence;
     return flag;
   }
@@ -291,6 +308,17 @@ public class Flag {
       int influence = (flag >> AUX_FLAG_SHIFT) & 0b11111;
       influence *= 25;
       return neutralEC(loc, influence);
+    } else if (type == Type.Muckraker) {
+      // `e^(0.4inf)`
+      int influence = (flag >> (AUX_FLAG_SHIFT + 1)) & 0b1111;
+      double dinf = Math.exp(0.4 * influence);
+      dinf = Math.round(dinf);
+      influence = (int) dinf;
+      return muckraker(loc, aux_flag, influence);
+    } else if (type == Type.EnemyEC) {
+      int isym = (flag >> (AUX_FLAG_SHIFT + 1)) & 0b11;
+      Symmetry sym = Symmetry.decode(isym);
+      return guessEnemyEC(loc, sym);
     }
 
     return new Flag(type, aux_flag, loc);
@@ -304,8 +332,20 @@ public class Flag {
 
     if (type == Type.NeutralEC) {
       flag |= (influence / 25) << AUX_FLAG_SHIFT;
+    } else if (type == Type.EnemyEC && sym != null) {
+      flag |= sym.encode() << (AUX_FLAG_SHIFT + 1);
     } else {
       flag |= (aux_flag ? 1 : 0) << AUX_FLAG_SHIFT;
+      if (type == Type.Muckraker && influence != null) {
+        // The inverse is `ln(inf)/0.4`
+        double dinf = influence;
+        dinf = Math.log(dinf) / 0.4;
+        // Clamp between 0..15 and round it
+        dinf = Math.max(Math.min(dinf, 15), 0);
+        dinf = Math.round(dinf);
+        int res = (int) dinf;
+        flag |= res << (AUX_FLAG_SHIFT + 1);
+      }
     }
 
     if (loc != null) {
