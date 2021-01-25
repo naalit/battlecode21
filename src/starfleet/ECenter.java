@@ -111,7 +111,7 @@ public class ECenter {
     if (!is_muckraker_nearby /* && nslans < 30 */ && pol_before_slan)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4)) : 17;
+    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4)) : 21;
     if (pol_before_slan && total - pol_inf + income * 2 < 51)
       return new Spawn(MUCKRAKER, 1);
 

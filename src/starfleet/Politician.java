@@ -96,7 +96,9 @@ public class Politician {
 
     // An extra unit is probably worth about one turn's income, or at least that's
     // what wololo does and it seems to work.
-    int unit_price = Robot.ec_income;
+    // Except, wololo doesn't spawn many slanderers and we do, so our price gets too high.
+    // We reduce it with a logistic function.
+    int unit_price = (int) (20 * Math.atan(Robot.ec_income / 20.0));
     // So this is how much it will cost to explode
     int emp_cost = -rc.getConviction() - unit_price;
 
