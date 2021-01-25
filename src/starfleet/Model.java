@@ -205,8 +205,7 @@ public class Model {
     ECInfo ec = ECInfo.guess(guessed.swap(original));
     if (ec.loc == null)
       return;
-    if (rc.getLocation().equals(ec) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec)
-        || neutral_ecs.contains(ec))
+    if (rc.getLocation().equals(ec) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec) || neutral_ecs.contains(ec))
       return;
     else {
       rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 0);
@@ -272,6 +271,8 @@ public class Model {
     }
     return new MapLocation(tx / mucks.size(), ty / mucks.size());
   }
+
+  public static boolean cleanup_mode = false;
 
   /**
    * Checks if the location is on the map, returning `true` if unsure. Uses the
@@ -350,6 +351,10 @@ public class Model {
     return true;
   }
 
+  public static boolean knowsEdges() {
+    return minX != null && minY != null && maxX != null && maxY != null;
+  }
+
   /**
    * Given a location we know is off the map, moves `(dx, dy)` by `(dx, dy)` until
    * we get to a location that's on the map, then calls setEdge() on that
@@ -392,6 +397,8 @@ public class Model {
         }
       }
     }
+    // If there are any enemy ECs, we're no longer in cleanup mode
+    cleanup_mode = false;
     enemy_ecs.add(e);
     if (e.loc != null)
       rc.setIndicatorLine(rc.getLocation(), e.loc, 0, 0, 0);

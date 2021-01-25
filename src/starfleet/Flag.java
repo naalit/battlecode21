@@ -121,7 +121,11 @@ public class Flag {
      * EC: sending out our income last turn (in the ID slot), so pols can use it to
      * calculate things.
      */
-    Income;
+    Income,
+    /**
+     * EC: we're entering cleanup mode, since we think we killed all the enemy ECs.
+     */
+    CleanupMode;
 
     public static Type decode(int header) {
       switch (header) {
@@ -153,6 +157,8 @@ public class Flag {
         return WrongSymmetry;
       case 13:
         return Income;
+      case 14:
+        return CleanupMode;
       default:
         throw new RuntimeException("Can't decode header " + header);
       }
@@ -188,6 +194,8 @@ public class Flag {
         return 12;
       case Income:
         return 13;
+      case CleanupMode:
+        return 14;
       }
       throw new RuntimeException("That's not possible");
     }

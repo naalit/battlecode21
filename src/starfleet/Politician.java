@@ -96,7 +96,8 @@ public class Politician {
 
     // An extra unit is probably worth about one turn's income, or at least that's
     // what wololo does and it seems to work.
-    // Except, wololo doesn't spawn many slanderers and we do, so our price gets too high.
+    // Except, wololo doesn't spawn many slanderers and we do, so our price gets too
+    // high.
     // We reduce it with a logistic function.
     int unit_price = (int) (20 * Math.atan(Robot.ec_income / 20.0));
     // So this is how much it will cost to explode
@@ -133,7 +134,8 @@ public class Politician {
               } else {
                 // Enough to convert
                 totals[r] += i.conviction;
-                // And we converted it, so that's two units we've gained relative to the opponent
+                // And we converted it, so that's two units we've gained relative to the
+                // opponent
                 totals[r] += unit_price * 2;
                 // Plus the rest, non-buffed
                 totals[r] += (int) (conv - conv_to_convert);
@@ -159,7 +161,7 @@ public class Politician {
                 // We gained one unit relative to the opponent, since they lost one
                 totals[r] += unit_price;
                 // if (i.type == MUCKRAKER)
-                //   totals[r] += 5;
+                // totals[r] += 5;
               } else {
                 // We can't kill it, just do damage
                 totals[r] += conv * buff;
@@ -280,12 +282,71 @@ public class Politician {
   }
 
   /**
+   * If there are enemies in range, empowers, otherwise looks for enemies to kill.
+   * Used when in cleanup mode.
+   */
+  static void cleanup() {
+    MapLocation loc = rc.getLocation();
+    RobotInfo strongest = null;
+    final int[] radii = { 1, 2, 4, 9 }; // These are squared
+    int[] nhits = { 0, 0, 0, 0 };
+    int[] total = { 0, 0, 0, 0 };
+    for (RobotInfo i : Robot.nearby) {
+      int dist2 = i.location.distanceSquaredTo(loc);
+      if (dist2 <= POLITICIAN.actionRadiusSquared) {
+        for (int r = 0; r < radii.length; r++) {
+          int r2 = radii[r];
+          if (dist2 <= r2) {
+            if (i.team != team)
+              nhits[r]++;
+            total[r]++;
+          }
+        }
+      } else if (i.team != team && (strongest == null || i.conviction > strongest.conviction)) {
+        strongest = i;
+      }
+    }
+
+    double best_ratio = 0;
+    int best_r = 1;
+    for (int r = 0; r < radii.length; r++) {
+      double ratio = ((double) nhits[r]) / total[r];
+      if (ratio > best_ratio) {
+        best_ratio = ratio;
+        best_r = radii[r];
+      }
+    }
+
+    try {
+      if (best_ratio > 0) {
+        rc.empower(best_r);
+      } else if (strongest != null) {
+        Robot.target = strongest.location;
+        Robot.targetMove(true);
+      } else {
+        Robot.targetMove(true);
+      }
+    } catch (GameActionException e) {
+      // This just means we have cooldown turns left
+    }
+  }
+
+  /**
    * Runs most of a politician's turn, after updating Robot. Figures out whether
    * to empower and where to move.
    */
   static void turn() throws GameActionException {
+    if (Model.cleanup_mode) {
+      rc.setIndicatorDot(rc.getLocation(), 0, 255, 255);
+    }
+
     if (protectSlanderers() || tradeEmpower())
       return;
+
+    if (Model.cleanup_mode) {
+      cleanup();
+      return;
+    }
 
     if (Robot.rpriority && Robot.reinforce_loc != null
         && Robot.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 49)) {

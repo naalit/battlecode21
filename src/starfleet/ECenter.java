@@ -257,9 +257,15 @@ public class ECenter {
     }
     case ConvertF: {
       ECInfo ecif = new ECInfo(flag.loc);
-      if (Model.enemy_ecs.remove(ecif) || Model.neutral_ecs.remove(ecif))
+      boolean was_enemy = Model.enemy_ecs.remove(ecif);
+      if (was_enemy || Model.neutral_ecs.remove(ecif)) {
         if (cvt_pending == null)
           cvt_pending = flag.loc;
+        if (was_enemy && Model.enemy_ecs.isEmpty() && rc.getRobotCount() > 500 && Model.knowsEdges()) {
+          // This was probably the last enemy EC, so enter cleanup mode
+          Model.cleanup_mode = true;
+        }
+      }
       break;
     }
     case Edge:
@@ -296,6 +302,7 @@ public class ECenter {
 
     // These aren't possible for a robot
     case Income:
+    case CleanupMode:
     case Muckraker2:
     case MyLocationX:
     case MyLocationY:
@@ -425,6 +432,11 @@ public class ECenter {
               }
               break;
 
+            case CleanupMode:
+              if (Model.enemy_ecs.isEmpty())
+                Model.cleanup_mode = true;
+              break;
+
             case Income:
             case EnemyCenter:
             case Muckraker2:
@@ -528,6 +540,11 @@ public class ECenter {
     if (enemy_ec_cursor < Model.enemy_ecs.size()) {
       ECInfo ec = Model.enemy_ecs.get(enemy_ec_cursor++);
       return new Flag(Flag.Type.EnemyEC, !ec.guessed, ec.loc);
+    }
+
+    if (Model.cleanup_mode) {
+      System.out.println("Activating cleanup mode!");
+      return new Flag(Flag.Type.CleanupMode);
     }
 
     // And send edges

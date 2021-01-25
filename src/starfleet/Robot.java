@@ -241,6 +241,10 @@ public class Robot {
           ec_income = flag.id;
           break;
 
+        case CleanupMode:
+          Model.cleanup_mode = true;
+          break;
+
         // As a robot, we know our home EC's location already
         case MyLocationX:
         case MyLocationY:
