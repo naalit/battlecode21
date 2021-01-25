@@ -582,6 +582,8 @@ public class ECenter {
     }
 
     income = rc.getInfluence() + spent - last_inf;
+    // If we lost more bidding than we gained, income can go negative
+    income = Math.max(income, 0);
     last_inf = rc.getInfluence();
 
     nearby = rc.senseNearbyRobots();
