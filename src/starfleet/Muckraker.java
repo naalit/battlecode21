@@ -54,7 +54,7 @@ public class Muckraker {
     if (Robot.target == null && Robot.ec != null && Robot.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
       Direction dir = Robot.ec.directionTo(rc.getLocation());
       Robot.target = Robot.ec.translate(dir.dx * 100, dir.dy * 100);
-    } else {
+    } else if (Robot.target == null || rc.getLocation().equals(Robot.target)) {
       MapLocation target_ec = null;
       int ec_dist2 = 100000;
       // Go towards the closest enemy EC
