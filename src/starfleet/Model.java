@@ -194,10 +194,14 @@ public class Model {
 
             case WrongSymmetry:
               Symmetry sym = Symmetry.decode(f.id);
-              if (sym != null && sym == Model.guessed) {
+              if (sym != null) {
                 wrongSymmetry(sym, true);
-                wrong_sym_turn = rc.getRoundNum();
-                unreported_wrong = sym;
+                if (sym == guessed) {
+                  wrong_sym_turn = rc.getRoundNum();
+                  unreported_wrong = sym;
+                }
+              } else {
+                System.err.println("WrongSymmetry with null!");
               }
               break;
 
@@ -244,10 +248,13 @@ public class Model {
       switch (sym) {
       case Horizontal:
         maybe_horiz = false;
+        break;
       case Vertical:
         maybe_vert = false;
+        break;
       case Rotational:
         maybe_rot = false;
+        break;
       }
     if (sym != null && (guessed == null || guessed == sym)) {
       // Remove and reguess
@@ -334,7 +341,8 @@ public class Model {
     ECInfo ec = ECInfo.guess(guessed.swap(original), guessed);
     if (ec.loc == null)
       return;
-    if (rc.getLocation().equals(ec) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec) || neutral_ecs.contains(ec))
+    if (rc.getLocation().equals(ec.loc) || friendly_ecs.contains(ec) || enemy_ecs.contains(ec)
+        || neutral_ecs.contains(ec))
       return;
     else {
       rc.setIndicatorLine(rc.getLocation(), ec.loc, 255, 255, 0);

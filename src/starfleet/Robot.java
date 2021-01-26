@@ -314,6 +314,7 @@ public class Robot {
           RobotInfo r = rc.senseRobotAtLocation(i.loc);
           // If it *is* an EC, we already found it and reported it above
           if (r == null || r.type != ENLIGHTENMENT_CENTER) {
+            rc.setIndicatorDot(i.loc, 255, 0, 0);
             Model.wrongSymmetry(i.guessed, false);
             queue.add(new Flag(Flag.Type.WrongSymmetry, i.guessed.encode()));
             ec_noticed_wrong_sym = false;
@@ -411,7 +412,7 @@ public class Robot {
         break;
 
       case WrongSymmetry:
-        if (ec_noticed_wrong_sym || pending_id != ec_id)
+        if (ec_noticed_wrong_sym || (pending_id != null && pending_id != ec_id))
           return;
       default:
         counter = 0;

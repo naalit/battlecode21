@@ -486,7 +486,10 @@ public class ECenter {
     }
 
     for (ECInfo i : Model.enemy_ecs) {
-      rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 0);
+      if (i.guessed == null)
+        rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 0);
+      else
+        rc.setIndicatorLine(rc.getLocation(), i.loc, 0, 0, 128);
     }
 
     income = rc.getInfluence() + spent - last_inf;
