@@ -251,10 +251,11 @@ public class Robot {
             }
           }
 
-          if (ec == null) {
+          // If we just spawned, we get adopted automatically
+          if (ec == null && iloc.isWithinDistanceSquared(loc, 2)) {
             ec = iloc;
             ec_id = i.ID;
-          } else if (ec_id != i.ID) {
+          } else if (ec_id == null || ec_id != i.ID) {
             queue.add(new Flag(Flag.Type.AdoptMe, i.ID));
             pending_ec = iloc;
             pending_id = i.ID;
