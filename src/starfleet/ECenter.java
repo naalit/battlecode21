@@ -82,7 +82,7 @@ public class ECenter {
 
   static int slanInf(int spend) {
     for (int i : slanderer_infs) {
-      if (spend >= i)
+      if (spend >= i && i >= MIN_SLAN_INF)
         return i;
     }
     return 0;
@@ -90,8 +90,16 @@ public class ECenter {
 
   static boolean pol_before_slan = true;
   static int buff_muck_cursor = 0;
+  static int MIN_SLAN_INF = 41;
 
   static Spawn nextSpawn() {
+    if (nslans > 8)
+      MIN_SLAN_INF = 107;
+    else if (nslans > 3)
+      MIN_SLAN_INF = 63;
+    else
+      MIN_SLAN_INF = 41;
+
     // Calculate the amount we're willing to spend this turn.
     // If there are enemies nearby, we don't want them to take our EC, so the amount
     // we want to keep in the EC is higher.
@@ -103,7 +111,7 @@ public class ECenter {
     if (!is_muckraker_nearby && nslans == 0 && spend >= 107)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    if (nmuks < 2 || (pol_before_slan && spend < 41))
+    if (nmuks < 2 || (pol_before_slan && spend < MIN_SLAN_INF))
       return new Spawn(MUCKRAKER, spend > 1000 && buff_muck_cursor++ % 3 == 0 ? 250 : 1);
 
     // Stop spawning slanderers if the EC is surrounded by them already.

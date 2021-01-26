@@ -6,7 +6,7 @@ import static battlecode.common.RobotType.*;
 public strictfp class RobotPlayer {
   public static void run(RobotController rc) throws GameActionException {
     if (rc.getRoundNum() == 1)
-      System.out.println("STARFLEET v QUALS");
+      System.out.println("STARFLEET v DYN SLAN INF");
 
     if (rc.getType() == ENLIGHTENMENT_CENTER)
       ECenter.run(rc);
