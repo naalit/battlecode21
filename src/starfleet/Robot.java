@@ -41,7 +41,7 @@ public class Robot {
       int prev_dist2 = loc.distanceSquaredTo(target);
       for (MapLocation i : options) {
         // Don't occupy EC spawning spaces
-        if ((ec != null && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
+        if ((ec != null && !too_close && i.isWithinDistanceSquared(ec, 2)) || !rc.canMove(loc.directionTo(i)))
           continue;
 
         if (i.equals(target)) {

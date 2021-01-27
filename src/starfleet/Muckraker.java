@@ -12,6 +12,8 @@ public class Muckraker {
     team = rc.getTeam();
   }
 
+  static boolean is_targeting_ec = false;
+
   static void turn() throws GameActionException {
     int tx = 0, ty = 0;
     int tt = 0;
@@ -27,6 +29,8 @@ public class Muckraker {
       rc.setIndicatorDot(m, 255, 0, 0);
       Robot.queue.add(new Flag(Flag.Type.EnemyCenter, m));
     }
+
+    boolean targeting_slan = false;
 
     // Target the slanderer with the highest influence (which generates the most
     // money) in range
@@ -49,27 +53,32 @@ public class Muckraker {
     } else if (strongest_far != null) {
       // Move towards any slanderers that aren't in range yet
       Robot.target = strongest_far.location;
+      targeting_slan = true;
     }
 
     if (Robot.target == null && Robot.ec != null && Robot.ec.isWithinDistanceSquared(rc.getLocation(), 30)) {
       Direction dir = Robot.ec.directionTo(rc.getLocation());
       Robot.target = Robot.ec.translate(dir.dx * 100, dir.dy * 100);
-    } else if (Robot.target == null || rc.getLocation().equals(Robot.target)) {
+    } else if (!targeting_slan && (Robot.target == null || rc.getLocation().isWithinDistanceSquared(Robot.target, 30) || (rc.getConviction() > 20 && !is_targeting_ec))) {
       MapLocation target_ec = null;
       int ec_dist2 = 100000;
       // Go towards the closest enemy EC
       if (target_ec == null) {
         for (ECInfo eec : Model.enemy_ecs) {
           int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());
-          if (target_ec == null || dist2 < ec_dist2) {
+          if ((target_ec == null || dist2 < ec_dist2) && dist2 > 30) {
             target_ec = eec.loc;
             ec_dist2 = dist2;
           }
         }
       }
 
-      if (target_ec != null && ec_dist2 > 49)
+      if (target_ec != null) {
         Robot.target = target_ec;
+        is_targeting_ec = true;
+      } else {
+        Robot.target = Robot.retarget();
+      }
     }
 
     if (rc.getConviction() < 20 || rc.getLocation().equals(Robot.target) || Robot.target == null
