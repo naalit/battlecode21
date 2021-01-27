@@ -111,6 +111,8 @@ public class Robot {
     Direction closest = null;
     int closest_d = 10000;
     for (Direction dir : Direction.values()) {
+      if (rc.getType() == POLITICIAN && !Model.isOnMap(rc.adjacentLocation(dir).add(dir)))
+        continue;
       if (rc.canMove(dir)) {
         MapLocation l = rc.getLocation().add(dir).add(dir);
         int d = Math.abs(l.distanceSquaredTo(ec) - r2);

@@ -111,20 +111,22 @@ public class ECenter {
     if (!is_muckraker_nearby && nslans == 0 && spend >= 107)
       return new Spawn(SLANDERER, slanInf(spend));
 
-    if (nmuks < 2 || (pol_before_slan && spend < MIN_SLAN_INF))
+    boolean should_spawn_slan = pol_before_slan && nslans < npols * (is_near_edge ? 3 : 4);
+
+    if (nmuks < 2 || (should_spawn_slan && spend < MIN_SLAN_INF))
       return new Spawn(MUCKRAKER, spend > 1000 && buff_muck_cursor++ % 3 == 0 ? 250 : 1);
 
     // Stop spawning slanderers if the EC is surrounded by them already.
     // This is useful when pols are dying faster than slanderers, so slanderers
     // build up to the point where we can't defend them anymore.
-    if (!is_muckraker_nearby && nslans < npols * 3 && pol_before_slan)
+    if (!is_muckraker_nearby && should_spawn_slan)
       return new Spawn(SLANDERER, slanInf(spend));
 
     int guard_inf = (pol_inf_cursor % 6 == 0) ? buff_muck_inf + 11 : 21;
     guard_inf = Math.max(guard_inf, 21);
     int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4))
         : guard_inf;
-    if (pol_inf_cursor % 2 == 1) {
+    if (pol_inf_cursor % 2 == 0) {
       ECInfo z = null;
       for (ECInfo i : Model.neutral_ecs) {
         int net = i.influence * 3 / 2;
@@ -579,8 +581,23 @@ public class ECenter {
     doBid();
   }
 
+  static boolean is_near_edge = false;
+
   public static void run(RobotController rc) {
     Model.init(rc);
+    // Check for edges ourselves
+    try {
+      MapLocation loc = rc.getLocation();
+      int sensor_radius = (int) Math.sqrt(ENLIGHTENMENT_CENTER.sensorRadiusSquared);
+      if (!rc.onTheMap(loc.translate(-sensor_radius, 0))
+      || !rc.onTheMap(loc.translate(sensor_radius, 0))
+      || !rc.onTheMap(loc.translate(0, -sensor_radius))
+      || !rc.onTheMap(loc.translate(0, sensor_radius))) {
+        is_near_edge = true;
+      }
+    } catch (GameActionException e) {
+      e.printStackTrace();
+    }
     ECenter.rc = rc;
     last_votes = rc.getTeamVotes();
 

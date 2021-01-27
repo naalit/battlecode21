@@ -9,13 +9,42 @@ public class Politician {
   static Team team;
   static ArrayList<RobotInfo> affected = new ArrayList<>();
   static int nfpols = 0;
+  static boolean is_anti_buffraker = false;
 
   static void init(RobotController rc) {
     Politician.rc = rc;
     team = rc.getTeam();
+    try {
+      if (rc.getType() == POLITICIAN && rc.getInfluence() > 100 && rc.getInfluence() % 2 == 1) {
+        for (Direction d : Direction.values()) {
+          MapLocation l = rc.adjacentLocation(d);
+          if (rc.canSenseLocation(l)) {
+            RobotInfo r = rc.senseRobotAtLocation(l);
+            if (r != null && r.team == team && r.type == ENLIGHTENMENT_CENTER) {
+              is_anti_buffraker = true;
+              break;
+            }
+          }
+        }
+      }
+    } catch (GameActionException e) {
+      e.printStackTrace();
+    }
   }
 
   static void lattice() throws GameActionException {
+    if (slanderer != null && Robot.ec != null) {
+      // If there are slanderers nearby, we want to be able to protect them, so stay
+      // close. Unless there are too many politicians already here.
+      // We want to be about 2 units away.
+      // So, for a target, we circle the EC 2 units farther out than the slanderer we
+      // picked earlier.
+      double r = Math.sqrt(slanderer.location.distanceSquaredTo(Robot.ec));
+      // Offset by 2.7 to make sure it rounds right
+      Robot.circleEC(r + 2.7);
+      return;
+    } else if (is_anti_buffraker)
+      return;
 
     MapLocation loc = rc.getLocation();
     if (loc.x % 3 == 0 && loc.y % 3 == 0 && !Model.isNextToEC(loc))
@@ -327,7 +356,6 @@ public class Politician {
       rc.setIndicatorDot(rc.getLocation(), 0, 255, 255);
     }
 
-    if (protectSlanderers() || tradeEmpower())
     boolean moving = protectSlanderers();
     if (tradeEmpower())
       return;
@@ -340,12 +368,13 @@ public class Politician {
     }
 
     if (Robot.rpriority && Robot.reinforce_loc != null
-        && Robot.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 49)) {
+        && Robot.reinforce_loc.isWithinDistanceSquared(rc.getLocation(), 144)) {
       Robot.target = Robot.reinforce_loc;
-      Robot.targetMove(true);
+      if (Robot.targetMove(false))
+        return;
     }
 
-    if (rc.getConviction() < 100 || rc.getConviction() % 2 == 1)
+    if (rc.getConviction() < 100 || is_anti_buffraker)
       lattice();
     else
       attackOrExplore();
