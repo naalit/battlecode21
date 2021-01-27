@@ -67,16 +67,10 @@ public class Politician {
     // We'll see slanderers as politicians, so subtract those first
     nfpols = -Robot.friendly_slanderers.size();
     affected.clear();
-    // We also want to know where enemy muckrakers are, so we can protect slanderers
-    // We just look at the closest muckraker
-    RobotInfo muckraker = null;
     for (RobotInfo i : Robot.nearby) {
       int dist2 = i.location.distanceSquaredTo(loc);
 
-      if (i.team != team && i.type == MUCKRAKER
-          && (muckraker == null || dist2 < muckraker.location.distanceSquaredTo(loc)))
-        muckraker = i;
-      else if (i.team == team && i.type == POLITICIAN) {
+      if (i.team == team && i.type == POLITICIAN) {
         nfpols++;
       }
 
@@ -108,7 +102,6 @@ public class Politician {
     int useful_conv = rc.getConviction() - 10;
     double buff = rc.getEmpowerFactor(team, 0);
     int[] totals = { emp_cost, emp_cost, emp_cost, emp_cost };
-    // TODO keep or remove?
     boolean[] hits_enemy = { false, false, false, false };
     for (RobotInfo i : affected) {
       int dist2 = i.location.distanceSquaredTo(loc);
@@ -161,8 +154,16 @@ public class Politician {
                 totals[r] += Math.min(conv * buff, i.conviction);
                 // We gained one unit relative to the opponent, since they lost one
                 totals[r] += unit_price;
-                // if (i.type == MUCKRAKER)
-                // totals[r] += 5;
+
+                // Either the muckraker is in kill distance now, or will be in after moving once
+                // and can move
+                if (i.type == MUCKRAKER && i.location.equals(Robot.muckraker) && slanderer != null
+                    && (Robot.muckraker.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                        || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                            && !rc.isLocationOccupied(mucknext)))) {
+                  // We'll have saved the slanderer
+                  totals[r] += slanderer.getInfluence() + unit_price;
+                }
               } else {
                 // We can't kill it, just do damage
                 totals[r] += conv * buff;
@@ -198,6 +199,9 @@ public class Politician {
     }
   }
 
+  static RobotInfo slanderer = null;
+  static MapLocation mucknext = null;
+
   static boolean protectSlanderers() throws GameActionException {
     MapLocation loc = rc.getLocation();
 
@@ -205,7 +209,7 @@ public class Politician {
     // If we've found a muckraker, we pick the closest one to the muckraker, since
     // it's in the most danger.
     // Otherwise, we pick the closest one to us.
-    RobotInfo slanderer = null;
+    slanderer = null;
     MapLocation rloc = (Robot.muckraker == null) ? loc : Robot.muckraker;
     for (RobotInfo i : Robot.friendly_slanderers) {
       if (slanderer == null || i.location.distanceSquaredTo(rloc) < slanderer.location.distanceSquaredTo(rloc))
@@ -216,25 +220,8 @@ public class Politician {
     // kill the muckraker, and the slanderer has higher influence than we have
     // conviction (which is usually true), then we need to kill the muckraker so it
     // doesn't kill the slanderer.
-    MapLocation mucknext = Robot.muckraker == null || slanderer == null ? null
+    mucknext = Robot.muckraker == null || slanderer == null ? null
         : Robot.muckraker.add(Robot.muckraker.directionTo(slanderer.location));
-    if (Robot.muckraker != null && slanderer != null
-    // Either the muckraker is in kill distance now, or will be in after moving once
-    // and can move
-        && (Robot.muckraker.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-            || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-                && !rc.isLocationOccupied(mucknext)))
-        // We're in kill distance of the muckraker now
-        && Robot.muckraker.isWithinDistanceSquared(loc, POLITICIAN.actionRadiusSquared)
-        // We can do damage
-        && rc.getConviction() > 10
-        // The slanderer is worth saving
-        && slanderer.influence >= rc.getConviction()) {
-      if (rc.canEmpower(POLITICIAN.actionRadiusSquared)) {
-        rc.empower(Robot.muckraker.distanceSquaredTo(loc));
-        return true;
-      }
-    }
 
     // If there's a muckraker threatening a slanderer, but we're not going to blow
     // it up right now, we should at least try to block it
@@ -243,7 +230,6 @@ public class Politician {
     // politician's job
         && (nfpols < 10 || loc.isWithinDistanceSquared(Robot.muckraker, 36))) {
       Robot.target = mucknext;
-      Robot.targetMove();
       return true;
     }
 
@@ -342,6 +328,10 @@ public class Politician {
     }
 
     if (protectSlanderers() || tradeEmpower())
+    boolean moving = protectSlanderers();
+    if (tradeEmpower())
+      return;
+    else if (moving && Robot.targetMove(false))
       return;
 
     if (Model.cleanup_mode) {
