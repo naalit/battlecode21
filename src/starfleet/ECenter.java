@@ -20,7 +20,7 @@ public class ECenter {
     // No reason to bid for votes past a majority
     // Also, if we bid too early our economy gets set up slower, and if we bid when
     // we have low conviction we never spawn slanderers
-    if (rc.getTeamVotes() > 750 || rc.getRoundNum() < 50 || rc.getConviction() < 200)
+    if (rc.getTeamVotes() > 750 || rc.getRoundNum() < 50 || rc.getConviction() < total_epol_conv + current_bid)
       return;
     // If our votes didn't change, we lost, and need to bid higher.
     boolean lost_last_round = rc.getTeamVotes() == last_votes;
@@ -124,9 +124,9 @@ public class ECenter {
 
     int guard_inf = (pol_inf_cursor % 6 == 0) ? buff_muck_inf + 11 : 21;
     guard_inf = Math.max(guard_inf, 21);
-    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 50) ? Math.min(spend, Math.max(200, rc.getConviction() / 4))
+    int pol_inf = (pol_inf_cursor % 2 == 0 && spend > 100) ? Math.min(spend, Math.max(200, rc.getConviction() / 4))
         : guard_inf;
-    if (pol_inf_cursor % 2 == 0) {
+    if (pol_inf_cursor % 2 == 0 && spend > 100) {
       ECInfo z = null;
       for (ECInfo i : Model.neutral_ecs) {
         int net = i.influence * 3 / 2;

@@ -7,8 +7,8 @@ import static battlecode.common.RobotType.*;
 public class Politician {
   static RobotController rc;
   static Team team;
-//   static RobotInfo[] affected = new RobotInfo[128];
-//   static int aff_len = 0;
+  // static RobotInfo[] affected = new RobotInfo[128];
+  // static int aff_len = 0;
   static int nfpols = 0;
   static boolean is_anti_buffraker = false;
 
@@ -76,10 +76,22 @@ public class Politician {
   }
 
   static boolean tradeEmpower() throws GameActionException {
-    int start_turn = rc.getRoundNum();
-    int btc = Clock.getBytecodesLeft();
 
     MapLocation loc = rc.getLocation();
+
+    int NDIRS = 9;//Direction.cardinalDirections().length + 1;
+    MapLocation[] locs = new MapLocation[NDIRS];
+    {
+      locs[0] = loc;
+      int i = 1;
+      for (Direction dir : ECenter.directions) {//Direction.cardinalDirections()) {
+        MapLocation l = loc.add(dir);
+        if (rc.onTheMap(l) && !rc.isLocationOccupied(l)) {
+          locs[i++] = l;
+        }
+      }
+      NDIRS = i;
+    }
 
     // A politician has 2 goals:
     // 1. Deal damage to enemy units, especially ECs
@@ -93,29 +105,37 @@ public class Politician {
     // We want to figure out how many units total are in each possible empowering
     // radius, which damage would be divided between.
     final int[] radii = { 1, 2, 4, 9 }; // These are squared
-    int[] rcounts = { 0, 0, 0, 0 };
+    int[][] rcounts = new int[NDIRS][4];
     // We also keep track of how many politicians are near here, and their average
     // conviction
     // We'll see slanderers as politicians, so subtract those first
-    // nfpols = -Robot.friendly_slanderers.size();
+    nfpols = -Robot.friendly_slanderers.size();
     // aff_len = 0;
-    int last_btc = Clock.getBytecodeNum();
-    RobotInfo[] affected = rc.senseNearbyRobots(POLITICIAN.actionRadiusSquared);
+    boolean any_enemy = false;
+
+    // Anything in radius 20 might be in the action radius of one of the locations
+    RobotInfo[] affected = rc.senseNearbyRobots(16);
     for (RobotInfo i : affected) {
-      int dist2 = i.location.distanceSquaredTo(loc);
 
-      // if (i.team == team && i.type == POLITICIAN) {
-      //   nfpols++;
-      // }
+      if (i.team == team && i.type == POLITICIAN) {
+        nfpols++;
+      } else if (!any_enemy && i.team != team) {
+        any_enemy = true;
+      }
 
-      for (int r = 0; r < rcounts.length; r++) {
-        int r2 = radii[r];
-        if (dist2 <= r2)
-        rcounts[r]++;
+      for (int li = 0; li < NDIRS; li++) {
+        int dist2 = i.location.distanceSquaredTo(locs[li]);
+        for (int r = 3; r >= 0; r--) {
+          if (dist2 <= radii[r])
+            rcounts[li][r]++;
+          else
+            break;
+        }
       }
     }
-    int ph1 = Clock.getBytecodeNum() - last_btc;
-    last_btc = Clock.getBytecodeNum();
+    // We'll never empower if there aren't enemies around
+    if (!any_enemy)
+      return false;
 
     // An extra unit is probably worth about one turn's income, or at least that's
     // what wololo does and it seems to work.
@@ -125,79 +145,133 @@ public class Politician {
     double N = 20;
     int unit_price = (int) (N * Math.atan(Model.home_ec_income / N));
     // So this is how much it will cost to explode
-    int emp_cost = -rc.getConviction() - unit_price;
+    int emp_cost = rc.getConviction() + unit_price;
 
     // Calculate total damage done for each possible radius
-    int useful_conv = rc.getConviction() - 10;
+    double useful_conv = rc.getConviction() - 10;
     double buff = rc.getEmpowerFactor(team, 0);
-    int[] totals = { emp_cost, emp_cost, emp_cost, emp_cost };
-    boolean[] hits_enemy = { false, false, false, false };
-    for (int j = 0; j < affected.length; j++){ 
+    int[][] totals = new int[NDIRS][4];
+    for (int j = 0; j < affected.length; j++) {
       RobotInfo i = affected[j];
-      int dist2 = i.location.distanceSquaredTo(loc);
+      rc.setIndicatorDot(i.location, 0, 0, 255);
 
       // TODO keep or remove?
       // Make sure pols don't crowd enemy ECs and not do anything
-      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && dist2 <= radii[0])
-        totals[0] += -emp_cost;
+      if (i.team != team && i.type == ENLIGHTENMENT_CENTER && i.location.isWithinDistanceSquared(loc, radii[0]))
+        totals[0][0] += emp_cost;
 
-      for (int r = 0; r < rcounts.length; r++) {
-        int r2 = radii[r];
-        if (dist2 <= r2) {
-          hits_enemy[r] |= i.team != team;
-          double conv = ((double) useful_conv) / rcounts[r];
-          if (i.type == ENLIGHTENMENT_CENTER) {
-            if (i.team == team) {
-              // No buff to friendly ECs
-              totals[r] += (int) conv;
-            } else {
-              // Complicated stuff
-              double conv_to_convert = i.conviction / buff;
-              if (conv <= conv_to_convert) {
-                totals[r] += (int) (conv * buff);
-              } else {
-                // Enough to convert
-                totals[r] += i.conviction;
-                // And we converted it, so that's two units we've gained relative to the
-                // opponent
-                totals[r] += unit_price * 2;
-                // Plus the rest, non-buffed
-                totals[r] += (int) (conv - conv_to_convert);
+
+      if (i.type == ENLIGHTENMENT_CENTER) {
+        if (i.team == team) {
+          for (int li = 0; li < NDIRS; li++) {
+            int dist2 = i.location.distanceSquaredTo(locs[li]);
+
+            for (int r = 3; r >= 0; r--) {
+              if (dist2 <= radii[r]) {
+                double conv = ((double) useful_conv) / rcounts[li][r];
+
+                // No buff to friendly ECs
+                totals[li][r] += (int) conv;
+              } else
+                break;
+            }
+          }
+        } else {
+          // Complicated stuff
+          double conv_to_convert = i.conviction / buff;
+          for (int li = 0; li < NDIRS; li++) {
+            int dist2 = i.location.distanceSquaredTo(locs[li]);
+
+            for (int r = 3; r >= 0; r--) {
+              if (dist2 <= radii[r]) {
+                double conv = ((double) useful_conv) / rcounts[li][r];
+
+                if (conv <= conv_to_convert) {
+                  totals[li][r] += (int) (conv * buff);
+                } else {
+                  // Enough to convert
+                  totals[li][r] += i.conviction
+                      // And we converted it, so that's two units we've gained relative to the
+                      // opponent
+                      + unit_price * 2
+                      // Plus the rest, non-buffed
+                      + (int) (conv - conv_to_convert);
+                }
+              } else
+                break;
+            }
+          }
+        }
+      } else {
+        // Full buff
+        if (i.team == team) {
+          // Our units can only heal upto their cap, and for muckrakers that's 0.7inf
+          int cap = i.type == MUCKRAKER ? (int) (i.influence * 0.7) : i.influence;
+          if (i.conviction == cap)
+            continue;
+          for (int li = 0; li < NDIRS; li++) {
+            int dist2 = i.location.distanceSquaredTo(locs[li]);
+            int[] rc = rcounts[li];
+            int[] tot = totals[li];
+
+            for (int r = 3; r >= 0; r--) {
+              if (dist2 <= radii[r]) {
+                double conv = useful_conv / rc[r];
+
+                tot[r] += Math.min(conv * buff, cap - i.conviction);
+              } else
+                break;
+            }
+          }
+        } else {
+          // If it's a politician, we can kill it then heal it; otherwise, we can just
+          // kill it. Also, sometimes conviction is 0, but the unit can still be killed.
+          if (i.type == POLITICIAN) {
+            for (int li = 0; li < NDIRS; li++) {
+              int dist2 = i.location.distanceSquaredTo(locs[li]);
+              int[] rc = rcounts[li];
+              int[] tot = totals[li];
+
+              for (int r = 3; r >= 0; r--) {
+                if (dist2 <= radii[r]) {
+                  double conv = (useful_conv) / rc[r];
+
+                  // We can transfer up to this much to make it a friendly pol of max health
+                  tot[r] += Math.min(conv * buff, i.influence + i.conviction)
+                      // And we gain two units relative to the opponent
+                      + conv * buff > i.conviction + 1 ? unit_price * 2 : 0;
+                } else
+                  break;
               }
             }
           } else {
-            // Full buff
-            if (i.team == team) {
-              // Our units can only heal upto their cap, and for muckrakers that's 0.7inf
-              int cap = i.type == MUCKRAKER ? (int) (i.influence * 0.7) : i.influence;
-              totals[r] += Math.min(conv * buff, cap - i.conviction);
-            } else {
-              // If it's a politician, we can kill it then heal it; otherwise, we can just
-              // kill it. Also, sometimes conviction is 0, but the unit can still be killed.
-              // Last, we want it to be worth it for 17hp pols to kill 2 1hp muckrakers.
-              if (i.type == POLITICIAN && conv * buff > i.conviction) {
-                // We can transfer up to this much to make it a friendly pol of max health
-                totals[r] += Math.min(conv * buff, i.influence + i.conviction);
-                // And we gain two units relative to the opponent
-                totals[r] += unit_price * 2;
-              } else if (conv * buff >= i.conviction + 1) {
-                // We can kill it (note the +1, because it needs to go negative to die)
-                totals[r] += Math.min(conv * buff, i.conviction);
-                // We gained one unit relative to the opponent, since they lost one
-                totals[r] += unit_price;
+            for (int li = 0; li < NDIRS; li++) {
+              int dist2 = i.location.distanceSquaredTo(locs[li]);
+              int[] rcs = rcounts[li];
+              int[] tot = totals[li];
 
-                // Either the muckraker is in kill distance now, or will be in after moving once
-                // and can move
-                if (i.type == MUCKRAKER && i.location.equals(Robot.muckraker) && slanderer != null
-                    && (Robot.muckraker.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-                        || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
-                            && !rc.isLocationOccupied(mucknext)))) {
-                  // We'll have saved the slanderer
-                  totals[r] += slanderer.getInfluence() + unit_price;
-                }
-              } else {
-                // We can't kill it, just do damage
-                totals[r] += conv * buff;
+              for (int r = 3; r >= 0; r--) {
+                if (dist2 <= radii[r]) {
+                  double conv = (useful_conv) / rcs[r];
+
+                  // We can kill it (note the +1, because it needs to go negative to die)
+                  tot[r] += Math.min(conv * buff, i.conviction);
+                  if (conv * buff >= i.conviction + 1) {
+                    // We gained one unit relative to the opponent, since they lost one
+                    tot[r] += unit_price;
+
+                    // Either the muckraker is in kill distance now, or will be in after moving once
+                    // and can move
+                    if (i.type == MUCKRAKER && i.location.equals(Robot.muckraker) && slanderer != null
+                        && (Robot.muckraker.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                            || (mucknext.isWithinDistanceSquared(slanderer.location, MUCKRAKER.actionRadiusSquared)
+                                && !rc.isLocationOccupied(mucknext)))) {
+                      // We'll have saved the slanderer
+                      tot[r] += slanderer.getInfluence() + unit_price;
+                    }
+                  }
+                } else
+                  break;
               }
             }
           }
@@ -205,31 +279,33 @@ public class Politician {
       }
     }
 
-    int ph2 = Clock.getBytecodeNum() - last_btc;
-
     // Find the radius with the highest total damage, but only count when we do
     // damage to enemies
     // Otherwise we'd be net losing money unless we have a big muckraker buff
     int max_r2 = 9;
+    int max_li = 0;
     int max_damage = 0;
-    for (int r = 0; r < totals.length; r++) {
-      int r2 = radii[r];
-      int damage = totals[r];
-      if ((hits_enemy[r] || damage > rc.getConviction()) && damage > max_damage) {
-        max_r2 = r2;
-        max_damage = damage;
+    for (int li = 0; li < NDIRS; li++) {
+      for (int r = 3; r >= 0; r--) {
+        int r2 = radii[r];
+        int damage = totals[li][r] - emp_cost;
+        if (damage > max_damage) {
+          max_li = li;
+          max_r2 = r2;
+          max_damage = damage;
+        }
       }
-    }
-
-    if (rc.getRoundNum() != start_turn) {
-        System.out.println("Went over time (" + ph1 + " + " + ph2 + " = " + (btc + Clock.getBytecodeNum()) + " BTC) on round " + start_turn);
     }
 
     // Empower if we'd be using at least 2/3 of our conviction, not counting tax;
     // or if there are a ton of politicians around and this one is at or below
     // average, so its life isn't worth much
-    if (max_damage > 0 && rc.canEmpower(max_r2)) {
+    if (max_li == 0 && max_damage > 0 && rc.canEmpower(max_r2)) {
       rc.empower(max_r2);
+      return true;
+    } else if (max_li != 0 && max_damage > 0) {
+      Robot.target = locs[max_li];
+      Robot.targetMove(false);
       return true;
     } else {
       return false;
@@ -253,21 +329,31 @@ public class Politician {
         slanderer = i;
     }
 
-    // If the muckraker will be able to kill the slanderer after moving, and we can
-    // kill the muckraker, and the slanderer has higher influence than we have
-    // conviction (which is usually true), then we need to kill the muckraker so it
-    // doesn't kill the slanderer.
-    mucknext = Robot.muckraker == null || slanderer == null ? null
-        : Robot.muckraker.add(Robot.muckraker.directionTo(slanderer.location));
-
     // If there's a muckraker threatening a slanderer, but we're not going to blow
     // it up right now, we should at least try to block it
-    if (Robot.muckraker != null && slanderer != null
-    // If there are a lot of politicians and we're fairly far away, it's another
-    // politician's job
-        && (nfpols < 10 || loc.isWithinDistanceSquared(Robot.muckraker, 36))) {
-      Robot.target = mucknext;
-      return true;
+    MapLocation mucknextA = null;
+    MapLocation mucknextB = null;
+    if (Robot.muckraker != null && slanderer != null) {
+      Direction mdir = Robot.muckraker.directionTo(slanderer.location);
+      mucknext = Robot.muckraker.add(mdir);
+      mucknextA = Robot.muckraker.add(mdir.rotateLeft());
+      mucknextB = Robot.muckraker.add(mdir.rotateRight());
+
+      if (loc.equals(mucknext) || loc.equals(mucknextA) || loc.equals(mucknextB)) {
+        Robot.target = null;
+        return true;
+      }
+
+      if (rc.canSenseLocation(mucknext) && !rc.isLocationOccupied(mucknext)) {
+        Robot.target = mucknext;
+        return true;
+      } else if (rc.canSenseLocation(mucknextA) && !rc.isLocationOccupied(mucknextA)) {
+        Robot.target = mucknextA;
+        return true;
+      } else if (rc.canSenseLocation(mucknextB) && !rc.isLocationOccupied(mucknextB)) {
+        Robot.target = mucknextB;
+        return true;
+      }
     }
 
     return false;
@@ -278,10 +364,10 @@ public class Politician {
     MapLocation target_ec = null;
     int ec_dist2 = 1000000;
     for (ECInfo eec : Model.neutral_ecs) {
-      // Only go for it if we'll do at least half damage
-      if (eec.influence >= (rc.getConviction() - 10) * 2)
+      // Only go for it if we'll kill it
+      if (eec.influence >= (rc.getConviction() - 10))
         continue;
-      int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
+      int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());
       if (target_ec == null || dist2 < ec_dist2) {
         target_ec = eec.loc;
         ec_dist2 = dist2;
@@ -290,7 +376,7 @@ public class Politician {
     // If there aren't any neutral ECs, and we have >= 100 conv, target an enemy EC
     if (target_ec == null && rc.getConviction() - 10 >= 100) {
       for (ECInfo eec : Model.enemy_ecs) {
-        int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());// ec != null ? ec : rc.getLocation());
+        int dist2 = eec.loc.distanceSquaredTo(rc.getLocation());
         if (target_ec == null || dist2 < ec_dist2) {
           target_ec = eec.loc;
           ec_dist2 = dist2;
@@ -318,7 +404,7 @@ public class Politician {
     for (RobotInfo i : Robot.nearby) {
       int dist2 = i.location.distanceSquaredTo(loc);
       if (dist2 <= POLITICIAN.actionRadiusSquared) {
-        for (int r = 0; r < radii.length; r++) {
+        for (int r = 3; r >= 0; r--) {
           int r2 = radii[r];
           if (dist2 <= r2) {
             if (i.team != team)
@@ -333,7 +419,7 @@ public class Politician {
 
     double best_ratio = 0;
     int best_r = 1;
-    for (int r = 0; r < radii.length; r++) {
+    for (int r = 3; r >= 0; r--) {
       double ratio = ((double) nhits[r]) / total[r];
       if (ratio > best_ratio) {
         best_ratio = ratio;

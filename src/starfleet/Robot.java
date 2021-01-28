@@ -483,9 +483,15 @@ public class Robot {
 
     while (true) {
       try {
+        int start_turn = rc.getRoundNum();
+
         turn();
 
-        Clock.yield();
+        if (rc.getRoundNum() != start_turn) {
+          // We went overtime. That's fine, since we can only act every 2 turns anyway.
+        } else
+          // We finished the turn on time
+          Clock.yield();
       } catch (GameActionException e) {
         e.printStackTrace();
       }
