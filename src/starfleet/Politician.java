@@ -7,7 +7,8 @@ import static battlecode.common.RobotType.*;
 public class Politician {
   static RobotController rc;
   static Team team;
-  static ArrayList<RobotInfo> affected = new ArrayList<>();
+//   static RobotInfo[] affected = new RobotInfo[128];
+//   static int aff_len = 0;
   static int nfpols = 0;
   static boolean is_anti_buffraker = false;
 
@@ -75,6 +76,8 @@ public class Politician {
   }
 
   static boolean tradeEmpower() throws GameActionException {
+    int start_turn = rc.getRoundNum();
+    int btc = Clock.getBytecodesLeft();
 
     MapLocation loc = rc.getLocation();
 
@@ -94,28 +97,25 @@ public class Politician {
     // We also keep track of how many politicians are near here, and their average
     // conviction
     // We'll see slanderers as politicians, so subtract those first
-    nfpols = -Robot.friendly_slanderers.size();
-    affected.clear();
-    for (RobotInfo i : Robot.nearby) {
+    // nfpols = -Robot.friendly_slanderers.size();
+    // aff_len = 0;
+    int last_btc = Clock.getBytecodeNum();
+    RobotInfo[] affected = rc.senseNearbyRobots(POLITICIAN.actionRadiusSquared);
+    for (RobotInfo i : affected) {
       int dist2 = i.location.distanceSquaredTo(loc);
 
-      if (i.team == team && i.type == POLITICIAN) {
-        nfpols++;
-      }
+      // if (i.team == team && i.type == POLITICIAN) {
+      //   nfpols++;
+      // }
 
-      if (dist2 <= POLITICIAN.actionRadiusSquared) {
-        // If it could recieve damage or healing from this politician, add it to
-        // `affected` so we can process it later
-        if (i.team != team || i.conviction < i.influence || i.type == ENLIGHTENMENT_CENTER)
-          affected.add(i);
-
-        for (int r = 0; r < rcounts.length; r++) {
-          int r2 = radii[r];
-          if (dist2 <= r2)
-            rcounts[r]++;
-        }
+      for (int r = 0; r < rcounts.length; r++) {
+        int r2 = radii[r];
+        if (dist2 <= r2)
+        rcounts[r]++;
       }
     }
+    int ph1 = Clock.getBytecodeNum() - last_btc;
+    last_btc = Clock.getBytecodeNum();
 
     // An extra unit is probably worth about one turn's income, or at least that's
     // what wololo does and it seems to work.
@@ -132,7 +132,8 @@ public class Politician {
     double buff = rc.getEmpowerFactor(team, 0);
     int[] totals = { emp_cost, emp_cost, emp_cost, emp_cost };
     boolean[] hits_enemy = { false, false, false, false };
-    for (RobotInfo i : affected) {
+    for (int j = 0; j < affected.length; j++){ 
+      RobotInfo i = affected[j];
       int dist2 = i.location.distanceSquaredTo(loc);
 
       // TODO keep or remove?
@@ -204,6 +205,8 @@ public class Politician {
       }
     }
 
+    int ph2 = Clock.getBytecodeNum() - last_btc;
+
     // Find the radius with the highest total damage, but only count when we do
     // damage to enemies
     // Otherwise we'd be net losing money unless we have a big muckraker buff
@@ -216,6 +219,10 @@ public class Politician {
         max_r2 = r2;
         max_damage = damage;
       }
+    }
+
+    if (rc.getRoundNum() != start_turn) {
+        System.out.println("Went over time (" + ph1 + " + " + ph2 + " = " + (btc + Clock.getBytecodeNum()) + " BTC) on round " + start_turn);
     }
 
     // Empower if we'd be using at least 2/3 of our conviction, not counting tax;
