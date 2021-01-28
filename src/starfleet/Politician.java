@@ -167,8 +167,9 @@ public class Politician {
           } else {
             // Full buff
             if (i.team == team) {
-              // Our units can only heal upto their cap
-              totals[r] += Math.min(conv * buff, i.influence - i.conviction);
+              // Our units can only heal upto their cap, and for muckrakers that's 0.7inf
+              int cap = i.type == MUCKRAKER ? (int) (i.influence * 0.7) : i.influence;
+              totals[r] += Math.min(conv * buff, cap - i.conviction);
             } else {
               // If it's a politician, we can kill it then heal it; otherwise, we can just
               // kill it. Also, sometimes conviction is 0, but the unit can still be killed.
@@ -178,8 +179,8 @@ public class Politician {
                 totals[r] += Math.min(conv * buff, i.influence + i.conviction);
                 // And we gain two units relative to the opponent
                 totals[r] += unit_price * 2;
-              } else if (conv * buff > i.conviction) {
-                // We can kill it (note the >, because it needs to go negative to die)
+              } else if (conv * buff >= i.conviction + 1) {
+                // We can kill it (note the +1, because it needs to go negative to die)
                 totals[r] += Math.min(conv * buff, i.conviction);
                 // We gained one unit relative to the opponent, since they lost one
                 totals[r] += unit_price;
