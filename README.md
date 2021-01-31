@@ -1,4 +1,9 @@
-# Battlecode 2021 Postmortem
+# Battlecode 2021
+
+This repository stores the code for my bots, so check that out if you want. The newest and best bot is in `src/starfleet`.
+The rest of this README is my postmortem.
+
+# Postmortem
 
 This was my first year doing Battlecode, and I really had a lot of fun.
 A year or two ago, I did Halite 3 and I did Terminal for a little while, which are fairly similar, but I enjoyed Battlecode a lot more.
